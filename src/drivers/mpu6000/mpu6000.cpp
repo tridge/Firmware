@@ -229,6 +229,7 @@ private:
 	perf_counter_t		_gyro_reads;
 	perf_counter_t		_sample_perf;
 	perf_counter_t		_bad_transfers;
+	perf_counter_t		_good_transfers;
 
 	math::LowPassFilter2p	_accel_filter_x;
 	math::LowPassFilter2p	_accel_filter_y;
@@ -404,6 +405,7 @@ MPU6000::MPU6000(int bus, const char *path_accel, const char *path_gyro, spi_dev
 	_gyro_reads(perf_alloc(PC_COUNT, "mpu6000_gyro_read")),
 	_sample_perf(perf_alloc(PC_ELAPSED, "mpu6000_read")),
 	_bad_transfers(perf_alloc(PC_COUNT, "mpu6000_bad_transfers")),
+	_good_transfers(perf_alloc(PC_COUNT, "mpu6000_good_transfers")),
 	_accel_filter_x(MPU6000_ACCEL_DEFAULT_RATE, MPU6000_ACCEL_DEFAULT_DRIVER_FILTER_FREQ),
 	_accel_filter_y(MPU6000_ACCEL_DEFAULT_RATE, MPU6000_ACCEL_DEFAULT_DRIVER_FILTER_FREQ),
 	_accel_filter_z(MPU6000_ACCEL_DEFAULT_RATE, MPU6000_ACCEL_DEFAULT_DRIVER_FILTER_FREQ),
@@ -413,7 +415,7 @@ MPU6000::MPU6000(int bus, const char *path_accel, const char *path_gyro, spi_dev
 	_rotation(rotation)
 {
 	// disable debug() calls
-	_debug_enabled = false;
+	_debug_enabled = true;
 
 	// default accel scale factors
 	_accel_scale.x_offset = 0;
@@ -456,6 +458,7 @@ MPU6000::~MPU6000()
 	perf_free(_accel_reads);
 	perf_free(_gyro_reads);
 	perf_free(_bad_transfers);
+	perf_free(_good_transfers);
 }
 
 int
@@ -1282,8 +1285,11 @@ MPU6000::measure()
 		// all zero data - probably a SPI bus error
 		perf_count(_bad_transfers);
 		perf_end(_sample_perf);
+		//reset();
 		return;
 	}
+
+	perf_count(_good_transfers);
 	    
 
 	/*
@@ -1402,6 +1408,8 @@ MPU6000::print_info()
 	perf_print_counter(_sample_perf);
 	perf_print_counter(_accel_reads);
 	perf_print_counter(_gyro_reads);
+	perf_print_counter(_bad_transfers);
+	perf_print_counter(_good_transfers);
 	_accel_reports->print_info("accel queue");
 	_gyro_reports->print_info("gyro queue");
 }
