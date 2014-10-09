@@ -210,6 +210,9 @@ ORB_DECLARE(output_pwm);
 /** force failsafe mode (failsafe values are set immediately even if failsafe condition not met) */
 #define PWM_SERVO_SET_FORCE_FAILSAFE _IOC(_PWM_SERVO_BASE, 24)
 
+/** force safety switch on (to enable use of safety switch) */
+#define PWM_SERVO_SET_FORCE_SAFETY_ON  _IOC(_PWM_SERVO_BASE, 25)
+
 /*
  *
  *
