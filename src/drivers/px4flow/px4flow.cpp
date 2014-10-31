@@ -677,6 +677,8 @@ start()
 	}
 
 	if (OK != g_dev->init()) {
+
+		#ifdef PX4_I2C_BUS_ESC
 		delete g_dev;
 		/* try 2nd bus */
 		g_dev = new PX4FLOW(PX4_I2C_BUS_ESC);
@@ -686,6 +688,8 @@ start()
 		}
 
 		if (OK != g_dev->init()) {
+		#endif
+
 			delete g_dev;
 			/* try 3rd bus */
 			g_dev = new PX4FLOW(PX4_I2C_BUS_ONBOARD);
@@ -697,7 +701,10 @@ start()
 			if (OK != g_dev->init()) {
 				goto fail;
 			}
+
+		#ifdef PX4_I2C_BUS_ESC
 		}
+		#endif
 	}
 
 	/* set the poll rate to default, starts automatic data collection */
