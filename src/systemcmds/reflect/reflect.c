@@ -45,14 +45,51 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <systemlib/err.h>
 
 __EXPORT int reflect_main(int argc, char *argv[]);
 
+// memory corruption checking
+#define MAX_BLOCKS 1000
+static uint32_t nblocks;
+struct block {
+    uint32_t v[256];
+};
+static struct block *blocks[MAX_BLOCKS];
+
+static void allocate_blocks(void)
+{
+    while (nblocks < MAX_BLOCKS) {
+        blocks[nblocks] = calloc(1, sizeof(struct block));
+        if (blocks[nblocks] == NULL) {
+            break;
+        }
+        for (uint32_t i=0; i<sizeof(blocks[nblocks]->v)/sizeof(uint32_t); i++) {
+            blocks[nblocks]->v[i] = i;
+        }
+        nblocks++;
+    }
+    printf("Allocated %u blocks\n", nblocks);
+}
+
+static void check_blocks(void)
+{
+    for (uint32_t n=0; n<nblocks; n++) {
+        for (uint32_t i=0; i<sizeof(blocks[nblocks]->v)/sizeof(uint32_t); i++) {
+            assert(blocks[n]->v[i] == i);
+        }
+    }
+}
+
 int
 reflect_main(int argc, char *argv[])
 {
+    uint32_t total = 0;
     printf("Starting reflector\n");
+
+    allocate_blocks();
+
     while (true) {
         char buf[128];
         ssize_t n = read(0, buf, sizeof(buf));
@@ -61,6 +98,11 @@ reflect_main(int argc, char *argv[])
         }
         if (n > 0) {
             write(1, buf, n);
+        }
+        total += n;
+        if (total > 1024000) {
+            check_blocks();
+            total = 0;
         }
     }
     return OK;
