@@ -56,6 +56,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <systemlib/err.h>
+#include <systemlib/px4_macros.h>
 #include <unistd.h>
 #include <drivers/drv_hrt.h>
 #include <math.h>
@@ -373,10 +374,7 @@ int create_log_dir()
 		strftime(log_dir + n, sizeof(log_dir) - n, "%Y-%m-%d", &tt);
 		mkdir_ret = mkdir(log_dir, S_IRWXU | S_IRWXG | S_IRWXO);
 
-		if (mkdir_ret == OK) {
-			warnx("log dir created: %s", log_dir);
-
-		} else if (errno != EEXIST) {
+		if ((mkdir_ret != OK) && (errno != EEXIST)) {
 			warn("failed creating new dir: %s", log_dir);
 			return -1;
 		}
@@ -1091,6 +1089,11 @@ int sdlog2_thread_main(int argc, char *argv[])
 		int wind_sub;
 		int encoders_sub;
 	} subs;
+
+	/* Make sure we have enough file descriptors to support this many subscriptions
+	 * taking into account stdin,stdout and std err
+	 */
+	CCASSERT((sizeof(subs) / sizeof (int)) < CONFIG_NFILE_DESCRIPTORS-3);
 
 	subs.cmd_sub = orb_subscribe(ORB_ID(vehicle_command));
 	subs.status_sub = orb_subscribe(ORB_ID(vehicle_status));

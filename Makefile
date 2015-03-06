@@ -124,7 +124,7 @@ $(STAGED_FIRMWARES): $(IMAGE_DIR)%.px4: $(BUILD_DIR)%.build/firmware.px4
 .PHONY: $(FIRMWARES)
 $(BUILD_DIR)%.build/firmware.px4: config   = $(patsubst $(BUILD_DIR)%.build/firmware.px4,%,$@)
 $(BUILD_DIR)%.build/firmware.px4: work_dir = $(BUILD_DIR)$(config).build/
-$(FIRMWARES): $(BUILD_DIR)%.build/firmware.px4:	checksubmodules generateuorbtopicheaders
+$(FIRMWARES): $(BUILD_DIR)%.build/firmware.px4:	generateuorbtopicheaders checksubmodules
 	@$(ECHO) %%%%
 	@$(ECHO) %%%% Building $(config) in $(work_dir)
 	@$(ECHO) %%%%
@@ -161,7 +161,7 @@ $(foreach config,$(FMU_CONFIGS),$(eval $(call FMU_DEP,$(config))))
 #
 NUTTX_ARCHIVES		 = $(foreach board,$(BOARDS),$(ARCHIVE_DIR)$(board).export)
 .PHONY:			archives
-archives:		checksubmodules $(NUTTX_ARCHIVES)
+archives:		checksubmodules nuttxpatches $(NUTTX_ARCHIVES)
 
 # We cannot build these parallel; note that we also force -j1 for the
 # sub-make invocations.
@@ -184,6 +184,29 @@ $(NUTTX_ARCHIVES): $(ARCHIVE_DIR)%.export: $(NUTTX_SRC)
 	$(Q) $(MKDIR) -p $(dir $@)
 	$(Q) $(COPY) $(NUTTX_SRC)nuttx-export.zip $@
 	$(Q) (cd $(NUTTX_SRC)/configs && $(RMDIR) $(board))
+
+NUTTX_PATCHES	:= $(wildcard $(PX4_NUTTX_PATCH_DIR)*.patch)
+NUTTX_PATCHED	= $(NUTTX_SRC).patchedpx4common
+
+.PHONY:	nuttxpatches
+nuttxpatches: 
+	$(Q) -if [ ! -f $(NUTTX_PATCHED) ]; then \
+		 	for patch in $(NUTTX_PATCHES); \
+				do \
+					$(PATCH) -p0 -N  < $$patch >/dev/null; \
+				done \
+		  fi
+	$(Q) $(TOUCH) $(NUTTX_PATCHED)
+
+.PHONY:	cleannuttxpatches
+cleannuttxpatches: 
+	$(Q) -if [  -f $(NUTTX_PATCHED) ]; then \
+		 	for patch in $(NUTTX_PATCHES); \
+				do \
+					$(PATCH) -p0 -N -R -r - < $$patch >/dev/null; \
+				done \
+		  fi
+	$(Q) $(REMOVE) $(NUTTX_PATCHED)
 
 #
 # The user can run the NuttX 'menuconfig' tool for a single board configuration with
@@ -236,7 +259,7 @@ GENMSG_PYTHONPATH = $(PX4_BASE)Tools/genmsg/src
 GENCPP_PYTHONPATH = $(PX4_BASE)Tools/gencpp/src
 
 .PHONY: generateuorbtopicheaders
-generateuorbtopicheaders:
+generateuorbtopicheaders: checksubmodules
 	@$(ECHO) "Generating uORB topic headers"
 	$(Q) (PYTHONPATH=$(GENMSG_PYTHONPATH):$(GENCPP_PYTHONPATH):$(PYTHONPATH) $(PYTHON) \
 		$(PX4_BASE)Tools/px_generate_uorb_topic_headers.py \
@@ -262,6 +285,10 @@ testbuild:
 tests:	generateuorbtopicheaders
 	$(Q) (mkdir -p $(PX4_BASE)/unittests/build && cd $(PX4_BASE)/unittests/build && cmake .. && $(MAKE) unittests)
 
+.PHONY: format check_format
+check_format:
+	$(Q) (./Tools/check_code_style.sh | sort -n)
+
 #
 # Cleanup targets.  'clean' should remove all built products and force
 # a complete re-compilation, 'distclean' should remove everything
@@ -274,7 +301,7 @@ clean:
 	$(Q) $(REMOVE) $(IMAGE_DIR)*.px4
 
 .PHONY:	distclean
-distclean: clean
+distclean: cleannuttxpatches clean
 	@echo > /dev/null
 	$(Q) $(REMOVE) $(ARCHIVE_DIR)*.export
 	$(Q) $(MAKE) -C $(NUTTX_SRC) -r $(MQUIET) distclean

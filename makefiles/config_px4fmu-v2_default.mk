@@ -56,6 +56,7 @@ MODULES		+= systemcmds/perf
 MODULES		+= systemcmds/preflight_check
 MODULES		+= systemcmds/pwm
 MODULES		+= systemcmds/esc_calib
+MODULES		+= systemcmds/hardfault_log
 MODULES		+= systemcmds/reboot
 MODULES		+= systemcmds/top
 MODULES		+= systemcmds/config
@@ -130,6 +131,11 @@ MODULES		+= modules/bottle_drop
 MODULES		+= examples/flow_position_estimator
 
 #
+# Rover apps
+#
+MODULES		+= examples/rover_steering_control
+
+#
 # Demo apps
 #
 #MODULES		+= examples/math_demo
@@ -170,4 +176,5 @@ endef
 #                  command                 priority                   stack  entrypoint
 BUILTIN_COMMANDS := \
 	$(call _B, sercon,                 ,                          2048,  sercon_main                ) \
-	$(call _B, serdis,                 ,                          2048,  serdis_main                )
+	$(call _B, serdis,                 ,                          2048,  serdis_main                ) \
+	$(call _B, cu,                     ,                          2048,  cu_main                    )
