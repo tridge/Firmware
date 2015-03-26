@@ -1644,7 +1644,8 @@ LSM303D::mag_measure()
 
 	// remember the temperature. The datasheet isn't clear, but it
 	// seems to be a signed offset from 25 degrees C in units of 0.125C
-	_last_temperature = 25 + (raw_mag_report.temperature*0.125f);
+	mag_report.temperature = 25 + (raw_mag_report.temperature*0.125f);
+	_last_temperature = mag_report.temperature;
 
 	// apply user specified rotation
 	rotate_3f(_rotation, mag_report.x, mag_report.y, mag_report.z);
