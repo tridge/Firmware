@@ -138,6 +138,10 @@ void UavcanMagnetometerBridge::mag_sub_cb(const uavcan::ReceivedDataStructure<ua
 	_report.x = (msg.magnetic_field[0] - _scale.x_offset) * _scale.x_scale;
 	_report.y = (msg.magnetic_field[1] - _scale.y_offset) * _scale.y_scale;
 	_report.z = (msg.magnetic_field[2] - _scale.z_offset) * _scale.z_scale;
+
+	// we don't get temperature
+	_report.temperature = 0;
+
 	unlock();
 
 	publish(msg.getSrcNodeID().get(), &_report);
