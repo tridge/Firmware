@@ -70,7 +70,7 @@
 #define OREOLED_NUM_LEDS		4			///< maximum number of LEDs the oreo led driver can support
 #define OREOLED_BASE_I2C_ADDR	0x68		///< base i2c address (7-bit)
 #define OPEOLED_I2C_RETRYCOUNT  2           ///< i2c retry count
-#define OREOLED_TIMEOUT_MS		10000000U	///< timeout looking for battery 10seconds after startup
+#define OREOLED_TIMEOUT_USEC		10000000U	///< timeout looking for battery 10seconds after startup
 #define OREOLED_GENERALCALL_US	4000000U	///< general call sent every 4 seconds
 #define OREOLED_GENERALCALL_CMD	0x00		///< general call command sent at regular intervals
 
@@ -127,8 +127,11 @@ private:
 	uint64_t		_start_time;					///< system time we first attempt to communicate with battery
 
 	/* performance checking */
-    perf_counter_t      _sample_perf;
-    perf_counter_t      _comms_errors;
+	perf_counter_t      _call_perf;
+	perf_counter_t      _gcall_perf;
+	perf_counter_t      _probe_perf;
+	perf_counter_t      _comms_errors;
+	perf_counter_t      _reply_errors;
 };
 
 /* for now, we only support one OREOLED */
@@ -148,8 +151,11 @@ OREOLED::OREOLED(int bus, int i2c_addr) :
 	_num_healthy(0),
 	_cmd_queue(nullptr),
 	_last_gencall(0),
-    _sample_perf(perf_alloc(PC_ELAPSED, "oreoled_read")),
-    _comms_errors(perf_alloc(PC_COUNT, "oreoled_comms_errors"))
+	_call_perf(perf_alloc(PC_ELAPSED, "oreoled_call")),
+	_gcall_perf(perf_alloc(PC_ELAPSED, "oreoled_gcall")),
+	_probe_perf(perf_alloc(PC_ELAPSED, "oreoled_probe")),
+	_comms_errors(perf_alloc(PC_COUNT, "oreoled_comms_errors")),
+	_reply_errors(perf_alloc(PC_COUNT, "oreoled_reply_errors"))
 {
 	/* initialise to unhealthy */
 	memset(_healthy, 0, sizeof(_healthy));
@@ -169,9 +175,12 @@ OREOLED::~OREOLED()
 		delete _cmd_queue;
 	}
 
-    /* free perf counters */
-    perf_free(_sample_perf);
-    perf_free(_comms_errors);
+	/* free perf counters */
+	perf_free(_call_perf);
+	perf_free(_gcall_perf);
+	perf_free(_probe_perf);
+	perf_free(_comms_errors);
+	perf_free(_reply_errors);
 }
 
 int
@@ -203,8 +212,8 @@ OREOLED::init()
 int
 OREOLED::probe()
 {
-    /* set retry count */
-    _retries = OPEOLED_I2C_RETRYCOUNT;
+	/* set retry count */
+	_retries = OPEOLED_I2C_RETRYCOUNT;
 
 	/* always return true */
 	return OK;
@@ -216,16 +225,19 @@ OREOLED::info()
 	/* print health info on each LED */
 	for (uint8_t i = 0; i < OREOLED_NUM_LEDS; i++) {
 		if (!_healthy[i]) {
-			log("oreo %u: BAD", (int)i);
+			log("oreo %u: BAD", (unsigned)i);
 
 		} else {
-			log("oreo %u: OK", (int)i);
+			log("oreo %u: OK", (unsigned)i);
 		}
 	}
 
 	/* display perf info */
-    perf_print_counter(_sample_perf);
-    perf_print_counter(_comms_errors);
+        perf_print_counter(_call_perf);
+	perf_print_counter(_gcall_perf);
+	perf_print_counter(_probe_perf);
+	perf_print_counter(_comms_errors);
+	perf_print_counter(_reply_errors);
 
 	return OK;
 }
@@ -259,7 +271,7 @@ OREOLED::cycle()
 {
 	/* check time since startup */
 	uint64_t now = hrt_absolute_time();
-	bool startup_timeout = (now - _start_time > OREOLED_TIMEOUT_MS);
+	bool startup_timeout = (now - _start_time > OREOLED_TIMEOUT_USEC);
 
 	/* if not leds found during start-up period, exit without rescheduling */
 	if (startup_timeout && _num_healthy == 0) {
@@ -275,15 +287,23 @@ OREOLED::cycle()
 		/* attempt to contact each unhealthy LED */
 		for (uint8_t i = 0; i < OREOLED_NUM_LEDS; i++) {
 			if (!_healthy[i]) {
+				perf_begin(_probe_perf);
+
 				/* set I2C address */
 				set_address(OREOLED_BASE_I2C_ADDR + i);
 
 				/* send I2C command and record health*/
-				if (transfer(msg, sizeof(msg), nullptr, 0) == OK) {
+                                uint8_t reply[2];
+				if (transfer(msg, sizeof(msg), reply, 2) == OK) {
 					_healthy[i] = true;
 					_num_healthy++;
-					warnx("oreoled %d ok", (unsigned)i);
+					log("oreoled %u ok", (unsigned)i);
+					if (reply[0] != OREOLED_BASE_I2C_ADDR + i ||
+					    reply[1] != msg[0]) {
+						perf_count(_reply_errors);
+					}
 				}
+				perf_end(_probe_perf);
 			}
 		}
 
@@ -293,9 +313,6 @@ OREOLED::cycle()
 		return;
 	}
 
-    /* start performance timer */
-    perf_begin(_sample_perf);
-
 	/* get next command from queue */
 	oreoled_cmd_t next_cmd;
 
@@ -303,26 +320,35 @@ OREOLED::cycle()
 		/* send valid messages to healthy LEDs */
 		if ((next_cmd.led_num < OREOLED_NUM_LEDS) && _healthy[next_cmd.led_num]
 		    && (next_cmd.num_bytes <= OREOLED_CMD_LENGTH_MAX)) {
+			/* start performance timer */
+			perf_begin(_call_perf);
+
 			/* set I2C address */
 			set_address(OREOLED_BASE_I2C_ADDR + next_cmd.led_num);
 			/* send I2C command */
-			if (transfer(next_cmd.buff, next_cmd.num_bytes, nullptr, 0) != OK) {
+                        uint8_t reply[2];
+			if (transfer(next_cmd.buff, next_cmd.num_bytes, reply, 2) != OK) {
 			    perf_count(_comms_errors);
+			} else if (reply[0] != OREOLED_BASE_I2C_ADDR + next_cmd.led_num ||
+				   reply[1] != next_cmd.buff[0]) {
+			    perf_count(_reply_errors);				
 			}
+
+			perf_end(_call_perf);
 		}
 	}
 
 	/* send general call every 4 seconds*/
 	if ((now - _last_gencall) > OREOLED_GENERALCALL_US) {
+		perf_begin(_gcall_perf);
 		send_general_call();
+		perf_end(_gcall_perf);
 	}
 
 	/* schedule a fresh cycle call when the measurement is done */
 	work_queue(HPWORK, &_work, (worker_t)&OREOLED::cycle_trampoline, this,
 		   USEC2TICK(OREOLED_UPDATE_INTERVAL_US));
 
-	/* stop perf timer */
-	perf_end(_sample_perf);
 }
 
 int
@@ -698,18 +724,18 @@ oreoled_main(int argc, char *argv[])
 		}
 
 		/* check led num */
-		sendb.led_num = (uint8_t)strtol(argv[2], NULL, 0);
+		sendb.led_num = (uint8_t)strtol(argv[optind + 1], NULL, 0);
 
 		if (sendb.led_num > 3) {
 			errx(1, "led number must be between 0 ~ 3");
 		}
 
 		/* get bytes */
-		sendb.num_bytes = argc - 3;
+		sendb.num_bytes = argc - (optind+2);
 		uint8_t byte_count;
 
 		for (byte_count = 0; byte_count < sendb.num_bytes; byte_count++) {
-			sendb.buff[byte_count] = (uint8_t)strtol(argv[byte_count + 3], NULL, 0);
+			sendb.buff[byte_count] = (uint8_t)strtol(argv[byte_count + optind + 2], NULL, 0);
 		}
 
 		/* send bytes */
