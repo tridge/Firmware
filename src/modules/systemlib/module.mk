@@ -48,8 +48,7 @@ SRCS		 = \
 		   board_serial.c \
 		   pwm_limit/pwm_limit.c \
 		   mcu_version.c \
-		   bson/tinybson.c \
-		   $(BUILD_DIR)git_version.c
+		   bson/tinybson.c
 
 ifneq ($(ARDUPILOT_BUILD),1)
 # ArduPilot uses its own parameter system
