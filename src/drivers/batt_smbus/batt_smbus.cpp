@@ -199,7 +199,7 @@ void batt_smbus_usage();
 extern "C" __EXPORT int batt_smbus_main(int argc, char *argv[]);
 
 BATT_SMBUS::BATT_SMBUS(int bus, uint16_t batt_smbus_addr) :
-	I2C("batt_smbus", BATT_SMBUS_DEVICE_PATH, bus, batt_smbus_addr, 400000),
+	I2C("batt_smbus", BATT_SMBUS0_DEVICE_PATH, bus, batt_smbus_addr, 100000),
 	_enabled(false),
 	_work{},
 	_reports(nullptr),
@@ -626,7 +626,7 @@ batt_smbus_main(int argc, char *argv[])
 		exit(0);
 	}
 
-	// need the driver past this point
+	/* need the driver past this point */
 	if (g_batt_smbus == nullptr) {
 		warnx("not started");
 		batt_smbus_usage();
