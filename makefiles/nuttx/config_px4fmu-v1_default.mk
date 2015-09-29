@@ -28,7 +28,7 @@ MODULES		+= drivers/ll40ls
 MODULES		+= drivers/trone
 MODULES		+= drivers/mb12xx
 MODULES		+= drivers/gps
-MODULES		+= drivers/hil
+MODULES		+= drivers/pwm_out_sim
 MODULES		+= drivers/blinkm
 MODULES		+= drivers/rgbled
 MODULES		+= drivers/mkblctrl
@@ -37,6 +37,7 @@ MODULES		+= drivers/ets_airspeed
 MODULES		+= drivers/meas_airspeed
 MODULES		+= drivers/frsky_telemetry
 MODULES		+= modules/sensors
+MODULES		+= drivers/px4flow
 
 #
 # System commands

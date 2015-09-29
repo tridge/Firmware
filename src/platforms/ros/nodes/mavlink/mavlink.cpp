@@ -46,7 +46,7 @@
 
 using namespace px4;
 
-Mavlink::Mavlink() :
+Mavlink::Mavlink(std::string mavlink_fcu_url) :
 	_n(),
 	_v_att_sub(_n.subscribe("vehicle_attitude", 1, &Mavlink::VehicleAttitudeCallback, this)),
 	_v_local_pos_sub(_n.subscribe("vehicle_local_position", 1, &Mavlink::VehicleLocalPositionCallback, this)),
@@ -55,7 +55,7 @@ Mavlink::Mavlink() :
 	_offboard_control_mode_pub(_n.advertise<offboard_control_mode>("offboard_control_mode", 1)),
 	_force_sp_pub(_n.advertise<vehicle_force_setpoint>("vehicle_force_setpoint", 1))
 {
-	_link = mavconn::MAVConnInterface::open_url("udp://localhost:14565@localhost:14560");
+	_link = mavconn::MAVConnInterface::open_url(mavlink_fcu_url);
 	_link->message_received.connect(boost::bind(&Mavlink::handle_msg, this, _1, _2, _3));
 	_att_sp = {};
 	_offboard_control_mode = {};
@@ -64,7 +64,10 @@ Mavlink::Mavlink() :
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "mavlink");
-	Mavlink m;
+	ros::NodeHandle privateNh("~");
+	std::string mavlink_fcu_url;
+	privateNh.param<std::string>("mavlink_fcu_url",      mavlink_fcu_url,   std::string("udp://localhost:14565@localhost:14560"));
+	Mavlink m(mavlink_fcu_url);
 	ros::spin();
 	return 0;
 }
@@ -273,7 +276,7 @@ void Mavlink::handle_msg_set_position_target_local_ned(const mavlink_message_t *
 		}
 
 		/* set the yaw sp value */
-		if (!offboard_control_mode.ignore_attitude) {
+		if (!offboard_control_mode.ignore_attitude && !isnan(set_position_target_local_ned.yaw)) {
 			pos_sp_triplet.current.yaw_valid = true;
 			pos_sp_triplet.current.yaw = set_position_target_local_ned.yaw;
 
@@ -282,7 +285,7 @@ void Mavlink::handle_msg_set_position_target_local_ned(const mavlink_message_t *
 		}
 
 		/* set the yawrate sp value */
-		if (!offboard_control_mode.ignore_bodyrate) {
+		if (!offboard_control_mode.ignore_bodyrate && !isnan(set_position_target_local_ned.yaw)) {
 			pos_sp_triplet.current.yawspeed_valid = true;
 			pos_sp_triplet.current.yawspeed = set_position_target_local_ned.yaw_rate;
 

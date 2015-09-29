@@ -43,6 +43,7 @@
 #include "device.h"
 #include "vfile.h"
 
+#include <hrt_work.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,29 +54,14 @@ using namespace device;
 
 extern "C" {
 
-struct timerData {
-	sem_t &sem;
-	struct timespec &ts;
- 
-	timerData(sem_t &s, struct timespec &t) : sem(s), ts(t) {}
-	~timerData() {}
-};
-
-static void *timer_handler(void *data)
+static void timer_cb(void *data)
 {
-	struct timerData *td = (struct timerData *)data;
-
-	if (td->ts.tv_sec) {
-		sleep(td->ts.tv_sec);
-	}
-	usleep(td->ts.tv_nsec/1000);
-	sem_post(&(td->sem));
-
+	sem_t *p_sem = (sem_t *)data;
+	sem_post(p_sem);
 	PX4_DEBUG("timer_handler: Timer expired");
-	return 0;
 }
 
-#define PX4_MAX_FD 100
+#define PX4_MAX_FD 200
 static device::file_t *filemap[PX4_MAX_FD] = {};
 
 int px4_errno;
@@ -117,6 +103,7 @@ int px4_open(const char *path, int flags, ...)
 			ret = dev->open(filemap[i]);
 		}
 		else {
+			PX4_WARN("exceeded maximum number of file descriptors!");
 			ret = -ENOENT;
 		}
 	}
@@ -201,16 +188,15 @@ int px4_ioctl(int fd, int cmd, unsigned long arg)
 		px4_errno = -ret;
 	}
 	
-        return (ret == 0) ? PX4_OK : PX4_ERROR;
+        return ret;
 }
 
 int px4_poll(px4_pollfd_struct_t *fds, nfds_t nfds, int timeout)
 {
 	sem_t sem;
 	int count = 0;
-	int ret;
+	int ret = -1;
 	unsigned int i;
-	struct timespec ts;
 
 	PX4_DEBUG("Called px4_poll timeout = %d", timeout);
 	sem_init(&sem, 0, 0);
@@ -236,29 +222,19 @@ int px4_poll(px4_pollfd_struct_t *fds, nfds_t nfds, int timeout)
 
 	if (ret >= 0)
 	{
-		if (timeout >= 0)
+		if (timeout > 0)
 		{
-			pthread_t pt;
-			void *res;
+			// Use a work queue task
+			work_s _hpwork;
 
-			ts.tv_sec = timeout/1000;
-			ts.tv_nsec = (timeout % 1000)*1000000;
-
-			// Create a timer to unblock
-			struct timerData td(sem, ts);
-			int rv = pthread_create(&pt, NULL, timer_handler, (void *)&td);
-			if (rv != 0) {
-				count = -1;
-				goto cleanup;
-			}
+			hrt_work_queue(&_hpwork, (worker_t)&timer_cb, (void *)&sem, 1000*timeout);
 			sem_wait(&sem);
 
 			// Make sure timer thread is killed before sem goes
 			// out of scope
-			(void)pthread_cancel(pt);
-			(void)pthread_join(pt, &res);
+			hrt_work_cancel(&_hpwork);
         	}
-		else
+		else if (timeout < 0) 
 		{
 			sem_wait(&sem);
 		}
@@ -282,7 +258,6 @@ int px4_poll(px4_pollfd_struct_t *fds, nfds_t nfds, int timeout)
 		}
 	}
 
-cleanup:
 	sem_destroy(&sem);
 
 	return count;
@@ -291,6 +266,16 @@ cleanup:
 int px4_fsync(int fd)
 {
 	return 0;
+}
+
+int px4_access(const char *pathname, int mode)
+{
+	if (mode != F_OK) {
+		errno = EINVAL;
+		return -1;
+	}
+	VDev *dev = VDev::getDev(pathname);
+	return (dev != nullptr) ? 0 : -1;
 }
 
 void px4_show_devices()

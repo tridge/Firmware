@@ -39,7 +39,6 @@ SRCS		 = \
 		   perf_counter.c \
 		   conversions.c \
 		   cpuload.c \
-		   getopt_long.c \
 		   pid/pid.c \
 		   airspeed.c \
 		   mavlink_log.c \
@@ -49,8 +48,7 @@ SRCS		 = \
 		   pwm_limit/pwm_limit.c \
 		   mcu_version.c \
 		   bson/tinybson.c \
-		   circuit_breaker.cpp \
-		   $(BUILD_DIR)git_version.c
+		   circuit_breaker.cpp
 
 ifneq ($(ARDUPILOT_BUILD),1)
 # ArduPilot uses its own parameter system
@@ -61,11 +59,14 @@ endif
 
 ifeq ($(PX4_TARGET_OS),nuttx)
 SRCS		+= err.c \
+		   printload.c \
 		   up_cxxinitialize.c 
+else
+SRCS		+= print_load_posix.c
 endif
 
 ifneq ($(PX4_TARGET_OS),qurt)
-SRCS 		+= hx_stream.c 
+SRCS 		+= hx_stream.c
 endif
 
 MAXOPTIMIZATION	 = -Os

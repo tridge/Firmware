@@ -39,7 +39,7 @@
  * @author Anton Babushkin <anton.babushkin@me.com>
  */
 
-#include <nuttx/config.h>
+#include <px4_config.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -47,14 +47,10 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <float.h>
-#include <nuttx/sched.h>
-#include <sys/prctl.h>
-#include <termios.h>
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
 #include <uORB/uORB.h>
-#include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_control_mode.h>
@@ -62,8 +58,11 @@
 #include <uORB/topics/parameter_update.h>
 #include <drivers/drv_hrt.h>
 
-#include <lib/mathlib/mathlib.h>
+#include <mathlib/mathlib.h>
+#include <mathlib/math/filter/LowPassFilter2p.hpp>
 #include <lib/geo/geo.h>
+#include <lib/ecl/validation/data_validator_group.h>
+#include <mavlink/mavlink_log.h>
 
 #include <systemlib/systemlib.h>
 #include <systemlib/param/param.h>
@@ -106,6 +105,8 @@ public:
 
 	void		task_main();
 
+	void		print();
+
 private:
 	static constexpr float _dt_max = 0.02;
 	bool		_task_should_exit = false;		/**< if true, task should exit */
@@ -124,6 +125,7 @@ private:
 		param_t	mag_decl_auto;
 		param_t	acc_comp;
 		param_t	bias_max;
+		param_t vibe_thresh;
 	}		_params_handles;		/**< handles for interesting parameters */
 
 	float		_w_accel = 0.0f;
@@ -133,6 +135,8 @@ private:
 	bool		_mag_decl_auto = false;
 	bool		_acc_comp = false;
 	float		_bias_max = 0.0f;
+	float		_vibration_warning_threshold = 1.0f;
+	hrt_abstime	_vibration_warning_timestamp = 0;
 
 	Vector<3>	_gyro;
 	Vector<3>	_accel;
@@ -145,9 +149,23 @@ private:
 	vehicle_global_position_s _gpos = {};
 	Vector<3>	_vel_prev;
 	Vector<3>	_pos_acc;
+
+	DataValidatorGroup _voter_gyro;
+	DataValidatorGroup _voter_accel;
+	DataValidatorGroup _voter_mag;
+
+	/* Low pass filter for attitude rates */
+	math::LowPassFilter2p _lp_roll_rate;
+	math::LowPassFilter2p _lp_pitch_rate;
+
 	hrt_abstime _vel_prev_t = 0;
 
 	bool		_inited = false;
+	bool		_data_good = false;
+	bool		_failsafe = false;
+	bool		_vibration_warning = false;
+
+	int		_mavlink_fd = -1;
 
 	perf_counter_t _update_perf;
 	perf_counter_t _loop_perf;
@@ -156,13 +174,21 @@ private:
 
 	int update_subscriptions();
 
-	void init();
+	bool init();
 
-	void update(float dt);
+	bool update(float dt);
 };
 
 
-AttitudeEstimatorQ::AttitudeEstimatorQ() {
+AttitudeEstimatorQ::AttitudeEstimatorQ() :
+	_voter_gyro(3),
+	_voter_accel(3),
+	_voter_mag(3),
+	_lp_roll_rate(250.0f, 20.0f),
+	_lp_pitch_rate(250.0f, 20.0f)
+{
+	_voter_mag.set_timeout(200000);
+	
 	_params_handles.w_acc		= param_find("ATT_W_ACC");
 	_params_handles.w_mag		= param_find("ATT_W_MAG");
 	_params_handles.w_gyro_bias	= param_find("ATT_W_GYRO_BIAS");
@@ -170,12 +196,14 @@ AttitudeEstimatorQ::AttitudeEstimatorQ() {
 	_params_handles.mag_decl_auto	= param_find("ATT_MAG_DECL_A");
 	_params_handles.acc_comp	= param_find("ATT_ACC_COMP");
 	_params_handles.bias_max	= param_find("ATT_BIAS_MAX");
+	_params_handles.vibe_thresh	= param_find("ATT_VIBE_THRESH");
 }
 
 /**
  * Destructor, also kills task.
  */
-AttitudeEstimatorQ::~AttitudeEstimatorQ() {
+AttitudeEstimatorQ::~AttitudeEstimatorQ()
+{
 	if (_control_task != -1) {
 		/* task wakes up every 100ms or so at the longest */
 		_task_should_exit = true;
@@ -189,7 +217,7 @@ AttitudeEstimatorQ::~AttitudeEstimatorQ() {
 
 			/* if we have given up, kill it */
 			if (++i > 50) {
-				task_delete(_control_task);
+				px4_task_delete(_control_task);
 				break;
 			}
 		} while (_control_task != -1);
@@ -198,15 +226,16 @@ AttitudeEstimatorQ::~AttitudeEstimatorQ() {
 	attitude_estimator_q::instance = nullptr;
 }
 
-int AttitudeEstimatorQ::start() {
+int AttitudeEstimatorQ::start()
+{
 	ASSERT(_control_task == -1);
 
 	/* start the task */
 	_control_task = px4_task_spawn_cmd("attitude_estimator_q",
 				       SCHED_DEFAULT,
 				       SCHED_PRIORITY_MAX - 5,
-				       2500,
-				       (main_t)&AttitudeEstimatorQ::task_main_trampoline,
+				       2100,
+				       (px4_main_t)&AttitudeEstimatorQ::task_main_trampoline,
 				       nullptr);
 
 	if (_control_task < 0) {
@@ -217,14 +246,24 @@ int AttitudeEstimatorQ::start() {
 	return OK;
 }
 
-void AttitudeEstimatorQ::task_main_trampoline(int argc, char *argv[]) {
+void AttitudeEstimatorQ::print()
+{
+	warnx("gyro status:");
+	_voter_gyro.print();
+	warnx("accel status:");
+	_voter_accel.print();
+	warnx("mag status:");
+	_voter_mag.print();
+}
+
+void AttitudeEstimatorQ::task_main_trampoline(int argc, char *argv[])
+{
 	attitude_estimator_q::instance->task_main();
 }
 
-void AttitudeEstimatorQ::task_main() {
-	warnx("started");
-
-    _sensors_sub = orb_subscribe(ORB_ID(sensor_combined));
+void AttitudeEstimatorQ::task_main()
+{
+	_sensors_sub = orb_subscribe(ORB_ID(sensor_combined));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
 	_global_pos_sub = orb_subscribe(ORB_ID(vehicle_global_position));
 
@@ -232,12 +271,16 @@ void AttitudeEstimatorQ::task_main() {
 
 	hrt_abstime last_time = 0;
 
-	struct pollfd fds[1];
+	px4_pollfd_struct_t fds[1];
 	fds[0].fd = _sensors_sub;
 	fds[0].events = POLLIN;
 
 	while (!_task_should_exit) {
-		int ret = poll(fds, 1, 1000);
+		int ret = px4_poll(fds, 1, 1000);
+
+		if (_mavlink_fd < 0) {
+			_mavlink_fd = open(MAVLINK_LOG_DEVICE, 0);
+		}
 
 		if (ret < 0) {
 			// Poll error, sleep and try again
@@ -253,9 +296,71 @@ void AttitudeEstimatorQ::task_main() {
 		// Update sensors
 		sensor_combined_s sensors;
 		if (!orb_copy(ORB_ID(sensor_combined), _sensors_sub, &sensors)) {
-			_gyro.set(sensors.gyro_rad_s);
-			_accel.set(sensors.accelerometer_m_s2);
-			_mag.set(sensors.magnetometer_ga);
+			// Feed validator with recent sensor data
+
+			for (unsigned i = 0; i < (sizeof(sensors.gyro_timestamp) / sizeof(sensors.gyro_timestamp[0])); i++) {
+
+				/* ignore empty fields */
+				if (sensors.gyro_timestamp[i] > 0) {
+
+					float gyro[3];
+
+					for (unsigned j = 0; j < 3; j++) {
+						if (sensors.gyro_integral_dt[i] > 0) {
+							gyro[j] = (double)sensors.gyro_integral_rad[i * 3 + j] / (sensors.gyro_integral_dt[i] / 1e6);
+						} else {
+							/* fall back to angular rate */
+							gyro[j] = sensors.gyro_rad_s[i * 3 + j];
+						}
+					}
+
+					_voter_gyro.put(i, sensors.gyro_timestamp[i], &gyro[0], sensors.gyro_errcount[i], sensors.gyro_priority[i]);
+				}
+				_voter_accel.put(i, sensors.accelerometer_timestamp[i], &sensors.accelerometer_m_s2[i * 3],
+					sensors.accelerometer_errcount[i], sensors.accelerometer_priority[i]);
+				_voter_mag.put(i, sensors.magnetometer_timestamp[i], &sensors.magnetometer_ga[i * 3],
+					sensors.magnetometer_errcount[i], sensors.magnetometer_priority[i]);
+			}
+
+			int best_gyro, best_accel, best_mag;
+
+			// Get best measurement values
+			hrt_abstime curr_time = hrt_absolute_time();
+			_gyro.set(_voter_gyro.get_best(curr_time, &best_gyro));
+			_accel.set(_voter_accel.get_best(curr_time, &best_accel));
+			_mag.set(_voter_mag.get_best(curr_time, &best_mag));
+
+			if (_accel.length() < 0.01f || _mag.length() < 0.01f) {
+				warnx("WARNING: degenerate accel / mag!");
+				continue;
+			}
+
+			_data_good = true;
+
+			if (!_failsafe && (_voter_gyro.failover_count() > 0 ||
+				_voter_accel.failover_count() > 0 ||
+				_voter_mag.failover_count() > 0)) {
+
+				_failsafe = true;
+				mavlink_and_console_log_emergency(_mavlink_fd, "SENSOR FAILSAFE! RETURN TO LAND IMMEDIATELY");
+			}
+
+			if (!_vibration_warning && (_voter_gyro.get_vibration_factor(curr_time) > _vibration_warning_threshold ||
+				_voter_accel.get_vibration_factor(curr_time) > _vibration_warning_threshold ||
+				_voter_mag.get_vibration_factor(curr_time) > _vibration_warning_threshold)) {
+
+				if (_vibration_warning_timestamp == 0) {
+					_vibration_warning_timestamp = curr_time;
+				} else if (hrt_elapsed_time(&_vibration_warning_timestamp) > 10000000) {
+					_vibration_warning = true;
+					mavlink_and_console_log_critical(_mavlink_fd, "HIGH VIBRATION! g: %d a: %d m: %d",
+						(int)(100 * _voter_gyro.get_vibration_factor(curr_time)),
+						(int)(100 * _voter_accel.get_vibration_factor(curr_time)),
+						(int)(100 * _voter_mag.get_vibration_factor(curr_time)));
+				}
+			} else {
+				_vibration_warning_timestamp = 0;
+			}
 		}
 
 		bool gpos_updated;
@@ -268,7 +373,7 @@ void AttitudeEstimatorQ::task_main() {
 			}
 		}
 
-		if (_acc_comp && _gpos.timestamp != 0 && hrt_absolute_time() < _gpos.timestamp + 20000 && _gpos.eph < 5.0f) {
+		if (_acc_comp && _gpos.timestamp != 0 && hrt_absolute_time() < _gpos.timestamp + 20000 && _gpos.eph < 5.0f && _inited) {
 			/* position data is actual */
 			if (gpos_updated) {
 				Vector<3> vel(_gpos.vel_n, _gpos.vel_e, _gpos.vel_d);
@@ -291,7 +396,7 @@ void AttitudeEstimatorQ::task_main() {
 		}
 
 		// Time from previous iteration
-		uint64_t now = hrt_absolute_time();
+		hrt_abstime now = hrt_absolute_time();
 		float dt = (last_time > 0) ? ((now  - last_time) / 1000000.0f) : 0.0f;
 		last_time = now;
 
@@ -299,7 +404,9 @@ void AttitudeEstimatorQ::task_main() {
 			dt = _dt_max;
 		}
 
-		update(dt);
+		if (!update(dt)) {
+			continue;
+		}
 
 		Vector<3> euler = _q.to_euler();
 
@@ -310,8 +417,11 @@ void AttitudeEstimatorQ::task_main() {
 		att.pitch = euler(1);
 		att.yaw = euler(2);
 
-		att.rollspeed = _rates(0);
-		att.pitchspeed = _rates(1);
+		/* the complimentary filter should reflect the true system
+		 * state, but we need smoother outputs for the control system
+		 */
+		att.rollspeed = _lp_roll_rate.apply(_rates(0));
+		att.pitchspeed = _lp_pitch_rate.apply(_rates(1));
 		att.yawspeed = _rates(2);
 
 		for (int i = 0; i < 3; i++) {
@@ -326,6 +436,10 @@ void AttitudeEstimatorQ::task_main() {
 		/* copy rotation matrix */
 		memcpy(&att.R[0], R.data, sizeof(att.R));
 		att.R_valid = true;
+
+		att.rate_vibration = _voter_gyro.get_vibration_factor(hrt_absolute_time());
+		att.accel_vibration = _voter_accel.get_vibration_factor(hrt_absolute_time());
+		att.mag_vibration = _voter_mag.get_vibration_factor(hrt_absolute_time());
 
 		if (_att_pub == nullptr) {
 			_att_pub = orb_advertise(ORB_ID(vehicle_attitude), &att);
@@ -357,10 +471,11 @@ void AttitudeEstimatorQ::update_parameters(bool force) {
 		param_get(_params_handles.acc_comp, &acc_comp_int);
 		_acc_comp = acc_comp_int != 0;
 		param_get(_params_handles.bias_max, &_bias_max);
+		param_get(_params_handles.vibe_thresh, &_vibration_warning_threshold);
 	}
 }
 
-void AttitudeEstimatorQ::init() {
+bool AttitudeEstimatorQ::init() {
 	// Rotation matrix can be easily constructed from acceleration and mag field vectors
 	// 'k' is Earth Z axis (Down) unit vector in body frame
 	Vector<3> k = -_accel;
@@ -381,13 +496,30 @@ void AttitudeEstimatorQ::init() {
 
 	// Convert to quaternion
 	_q.from_dcm(R);
+	_q.normalize();
+
+	if (PX4_ISFINITE(_q(0)) && PX4_ISFINITE(_q(1)) &&
+		PX4_ISFINITE(_q(2)) && PX4_ISFINITE(_q(3)) &&
+		_q.length() > 0.95f && _q.length() < 1.05f) {
+		_inited = true;
+	} else {
+		_inited = false;
+	}
+
+	return _inited;
 }
 
-void AttitudeEstimatorQ::update(float dt) {
+bool AttitudeEstimatorQ::update(float dt) {
 	if (!_inited) {
-		init();
-		_inited = true;
+
+		if (!_data_good) {
+			return false;
+		}
+
+		return init();
 	}
+
+	Quaternion q_last = _q;
 
 	// Angular rate of correction
 	Vector<3> corr;
@@ -425,52 +557,71 @@ void AttitudeEstimatorQ::update(float dt) {
 	_q += _q.derivative(corr) * dt;
 
 	// Normalize quaternion
-	_q.normalize(); // TODO! NaN protection???
+	_q.normalize();
+
+	if (!(PX4_ISFINITE(_q(0)) && PX4_ISFINITE(_q(1)) &&
+		PX4_ISFINITE(_q(2)) && PX4_ISFINITE(_q(3)))) {
+		// Reset quaternion to last good state
+		_q = q_last;
+		_rates.zero();
+		_gyro_bias.zero();
+		return false;
+	}
+
+	return true;
 }
 
 
 int attitude_estimator_q_main(int argc, char *argv[]) {
 	if (argc < 1) {
-		errx(1, "usage: attitude_estimator_q {start|stop|status}");
+		warnx("usage: attitude_estimator_q {start|stop|status}");
+		return 1;
 	}
 
 	if (!strcmp(argv[1], "start")) {
 
 		if (attitude_estimator_q::instance != nullptr) {
-			errx(1, "already running");
+			warnx("already running");
+			return 1;
 		}
 
 		attitude_estimator_q::instance = new AttitudeEstimatorQ;
 
 		if (attitude_estimator_q::instance == nullptr) {
-			errx(1, "alloc failed");
+			warnx("alloc failed");
+			return 1;
 		}
 
 		if (OK != attitude_estimator_q::instance->start()) {
 			delete attitude_estimator_q::instance;
 			attitude_estimator_q::instance = nullptr;
-			err(1, "start failed");
+			warnx("start failed");
+			return 1;
 		}
 
-		exit(0);
+		return 0;
 	}
 
 	if (!strcmp(argv[1], "stop")) {
 		if (attitude_estimator_q::instance == nullptr) {
-			errx(1, "not running");
+			warnx("not running");
+			return 1;
 		}
 
 		delete attitude_estimator_q::instance;
 		attitude_estimator_q::instance = nullptr;
-		exit(0);
+		return 0;
 	}
 
 	if (!strcmp(argv[1], "status")) {
 		if (attitude_estimator_q::instance) {
-			errx(0, "running");
+			attitude_estimator_q::instance->print();
+			warnx("running");
+			return 0;
 
 		} else {
-			errx(1, "not running");
+			warnx("not running");
+			return 1;
 		}
 	}
 

@@ -69,6 +69,7 @@
 
 #include <drivers/device/spi.h>
 #include <drivers/device/ringbuffer.h>
+#include <drivers/device/integrator.h>
 #include <drivers/drv_accel.h>
 #include <drivers/drv_gyro.h>
 #include <mathlib/math/filter/LowPassFilter2p.hpp>
@@ -167,10 +168,13 @@
 
 #define MPU6000_ACCEL_DEFAULT_RANGE_G			8
 #define MPU6000_ACCEL_DEFAULT_RATE			1000
+#define MPU6000_ACCEL_MAX_OUTPUT_RATE			280
 #define MPU6000_ACCEL_DEFAULT_DRIVER_FILTER_FREQ	30
 
 #define MPU6000_GYRO_DEFAULT_RANGE_G			8
 #define MPU6000_GYRO_DEFAULT_RATE			1000
+/* rates need to be the same between accel and gyro */
+#define MPU6000_GYRO_MAX_OUTPUT_RATE			MPU6000_ACCEL_MAX_OUTPUT_RATE
 #define MPU6000_GYRO_DEFAULT_DRIVER_FILTER_FREQ		30
 
 #define MPU6000_DEFAULT_ONCHIP_FILTER_FREQ		42
@@ -282,6 +286,9 @@ private:
 	math::LowPassFilter2p	_gyro_filter_x;
 	math::LowPassFilter2p	_gyro_filter_y;
 	math::LowPassFilter2p	_gyro_filter_z;
+
+	Integrator		_accel_int;
+	Integrator		_gyro_int;
 
 	enum Rotation		_rotation;
 
@@ -538,6 +545,8 @@ MPU6000::MPU6000(int bus, const char *path_accel, const char *path_gyro, spi_dev
 	_gyro_filter_x(MPU6000_GYRO_DEFAULT_RATE, MPU6000_GYRO_DEFAULT_DRIVER_FILTER_FREQ),
 	_gyro_filter_y(MPU6000_GYRO_DEFAULT_RATE, MPU6000_GYRO_DEFAULT_DRIVER_FILTER_FREQ),
 	_gyro_filter_z(MPU6000_GYRO_DEFAULT_RATE, MPU6000_GYRO_DEFAULT_DRIVER_FILTER_FREQ),
+	_accel_int(1000000 / MPU6000_ACCEL_MAX_OUTPUT_RATE),
+	_gyro_int(1000000 / MPU6000_GYRO_MAX_OUTPUT_RATE, true),
 	_rotation(rotation),
 	_checked_next(0),
 	_in_factory_test(false),
@@ -611,7 +620,7 @@ MPU6000::init()
 
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("SPI setup failed");
+		DEVICE_DEBUG("SPI setup failed");
 		return ret;
 	}
 
@@ -647,7 +656,7 @@ MPU6000::init()
 	ret = _gyro->init();
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("gyro init failed");
+		DEVICE_DEBUG("gyro init failed");
 		return ret;
 	}
 
@@ -763,7 +772,7 @@ MPU6000::probe()
 	uint8_t whoami;
 	whoami = read_reg(MPUREG_WHOAMI);
 	if (whoami != MPU_WHOAMI_6000) {
-		debug("unexpected WHOAMI 0x%02x", whoami);
+		DEVICE_DEBUG("unexpected WHOAMI 0x%02x", whoami);
 		return -EIO;
 
 	}
@@ -785,12 +794,12 @@ MPU6000::probe()
 	case MPU6000_REV_D8:
 	case MPU6000_REV_D9:
 	case MPU6000_REV_D10:
-		debug("ID 0x%02x", _product);
+		DEVICE_DEBUG("ID 0x%02x", _product);
 		_checked_values[0] = _product;
 		return OK;
 	}
 
-	debug("unexpected ID 0x%02x", _product);
+	DEVICE_DEBUG("unexpected ID 0x%02x", _product);
 	return -EIO;
 }
 
@@ -934,10 +943,14 @@ MPU6000::gyro_self_test()
 
 	/*
 	 * Maximum deviation of 20 degrees, according to
-	 * http://www.invensense.com/mems/gyro/documents/PS-MPU-6000A-00v3.4.pdf
+	 * http://www.farnell.com/datasheets/1788002.pdf
 	 * Section 6.1, initial ZRO tolerance
+	 *
+	 * 20 dps (0.34 rad/s) initial offset
+	 * and 20 dps temperature drift, so 0.34 rad/s * 2
 	 */
-	const float max_offset = 0.34f;
+	const float max_offset = 2.0f * 0.34f;
+
 	/* 30% scale error is chosen to catch completely faulty units but
 	 * to let some slight scale error pass. Requires a rate table or correlation
 	 * with mag rotations + data fit to
@@ -1546,6 +1559,13 @@ void
 MPU6000::stop()
 {
 	hrt_cancel(&_call);
+
+	/* reset internal states */
+	memset(_last_accel, 0, sizeof(_last_accel));
+
+	/* discard unread data in the buffers */
+	_accel_reports->flush();
+	_gyro_reports->flush();
 }
 
 void
@@ -1780,6 +1800,14 @@ MPU6000::measure()
 	arb.y = _accel_filter_y.apply(y_in_new);
 	arb.z = _accel_filter_z.apply(z_in_new);
 
+	math::Vector<3> aval(x_in_new, y_in_new, z_in_new);
+	math::Vector<3> aval_integrated;
+
+	bool accel_notify = _accel_int.put(arb.timestamp, aval, aval_integrated, arb.integral_dt);
+	arb.x_integral = aval_integrated(0);
+	arb.y_integral = aval_integrated(1);
+	arb.z_integral = aval_integrated(2);
+
 	arb.scaling = _accel_range_scale;
 	arb.range_m_s2 = _accel_range_m_s2;
 
@@ -1807,6 +1835,14 @@ MPU6000::measure()
 	grb.y = _gyro_filter_y.apply(y_gyro_in_new);
 	grb.z = _gyro_filter_z.apply(z_gyro_in_new);
 
+	math::Vector<3> gval(x_gyro_in_new, y_gyro_in_new, z_gyro_in_new);
+	math::Vector<3> gval_integrated;
+
+	bool gyro_notify = _gyro_int.put(arb.timestamp, gval, gval_integrated, grb.integral_dt);
+	grb.x_integral = gval_integrated(0);
+	grb.y_integral = gval_integrated(1);
+	grb.z_integral = gval_integrated(2);
+
 	grb.scaling = _gyro_range_scale;
 	grb.range_rad_s = _gyro_range_rad_s;
 
@@ -1817,10 +1853,15 @@ MPU6000::measure()
 	_gyro_reports->force(&grb);
 
 	/* notify anyone waiting for data */
-	poll_notify(POLLIN);
-	_gyro->parent_poll_notify();
+	if (accel_notify) {
+		poll_notify(POLLIN);
+	}
 
-	if (!(_pub_blocked)) {
+	if (gyro_notify) {
+		_gyro->parent_poll_notify();
+	}
+
+	if (accel_notify && !(_pub_blocked)) {
 		/* log the time of this report */
 		perf_begin(_controller_latency_perf);
 		perf_begin(_system_latency_perf);
@@ -1828,7 +1869,7 @@ MPU6000::measure()
 		orb_publish(ORB_ID(sensor_accel), _accel_topic, &arb);
 	}
 
-	if (!(_pub_blocked)) {
+	if (gyro_notify && !(_pub_blocked)) {
 		/* publish it */
 		orb_publish(ORB_ID(sensor_gyro), _gyro->_gyro_topic, &grb);
 	}
@@ -1903,7 +1944,7 @@ MPU6000_gyro::init()
 
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("gyro init failed");
+		DEVICE_DEBUG("gyro init failed");
 		return ret;
 	}
 
@@ -1946,7 +1987,7 @@ namespace mpu6000
 MPU6000	*g_dev_int; // on internal bus
 MPU6000	*g_dev_ext; // on external bus
 
-void	start(bool, enum Rotation);
+void	start(bool, enum Rotation, int range);
 void	stop(bool);
 void	test(bool);
 void	reset(bool);
@@ -1963,7 +2004,7 @@ void	usage();
  * or failed to detect the sensor.
  */
 void
-start(bool external_bus, enum Rotation rotation)
+start(bool external_bus, enum Rotation rotation, int range)
 {
 	int fd;
         MPU6000 **g_dev_ptr = external_bus?&g_dev_ext:&g_dev_int;
@@ -1998,6 +2039,9 @@ start(bool external_bus, enum Rotation rotation)
 		goto fail;
 
 	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0)
+		goto fail;
+
+	if (ioctl(fd, ACCELIOCSRANGE, range) < 0)
 		goto fail;
 
         close(fd);
@@ -2097,6 +2141,12 @@ test(bool external_bus)
 	warnx("temp:  \t%8.4f\tdeg celsius", (double)a_report.temperature);
 	warnx("temp:  \t%d\traw 0x%0x", (short)a_report.temperature_raw, (unsigned short)a_report.temperature_raw);
 
+	/* reset to default polling */
+	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0)
+		err(1, "reset to default polling");
+
+	close(fd);
+	close(fd_gyro);
 
 	/* XXX add poll-rate tests here too */
 
@@ -2196,6 +2246,7 @@ usage()
 	warnx("options:");
 	warnx("    -X    (external bus)");
 	warnx("    -R rotation");
+	warnx("    -a accel range (in g)");
 }
 
 } // namespace
@@ -2206,15 +2257,19 @@ mpu6000_main(int argc, char *argv[])
 	bool external_bus = false;
 	int ch;
 	enum Rotation rotation = ROTATION_NONE;
+	int accel_range = 8;
 
 	/* jump over start/off/etc and look at options first */
-	while ((ch = getopt(argc, argv, "XR:")) != EOF) {
+	while ((ch = getopt(argc, argv, "XR:a:")) != EOF) {
 		switch (ch) {
 		case 'X':
 			external_bus = true;
 			break;
 		case 'R':
 			rotation = (enum Rotation)atoi(optarg);
+			break;
+		case 'a':
+			accel_range = atoi(optarg);
 			break;
 		default:
 			mpu6000::usage();
@@ -2229,7 +2284,7 @@ mpu6000_main(int argc, char *argv[])
 
 	 */
 	if (!strcmp(verb, "start")) {
-		mpu6000::start(external_bus, rotation);
+		mpu6000::start(external_bus, rotation, accel_range);
 	}
 
 	if (!strcmp(verb, "stop")) {

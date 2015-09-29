@@ -41,10 +41,15 @@
 #include <nuttx/arch.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/clock.h>
-#elif defined(__PX4_POSIX) || defined(__PX4_QURT)
+#elif defined(__PX4_POSIX)
 
 #include <stdint.h>
 #include <queue.h>
+#include <px4_platform_types.h>
+
+#ifdef __PX4_QURT
+   #include <dspal_types.h>
+#endif
 
 __BEGIN_DECLS
 
@@ -69,7 +74,7 @@ struct work_s
   struct dq_entry_s dq;  /* Implements a doubly linked list */
   worker_t  worker;      /* Work callback */
   void *arg;             /* Callback argument */
-  uint32_t  qtime;       /* Time work queued */
+  uint64_t  qtime;       /* Time work queued */
   uint32_t  delay;       /* Delay until work performed */
 };
 

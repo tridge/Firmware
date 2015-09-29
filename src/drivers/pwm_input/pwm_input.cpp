@@ -104,7 +104,7 @@
 #elif PWMIN_TIMER == 2
 # define PWMIN_TIMER_BASE	STM32_TIM2_BASE
 # define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
-# define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM2EN
+# define PWMIN_TIMER_POWER_BIT	RCC_APB1ENR_TIM2EN
 # define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM2
 # define PWMIN_TIMER_CLOCK	STM32_APB1_TIM2_CLKIN
 #elif PWMIN_TIMER == 3
@@ -122,7 +122,7 @@
 #elif PWMIN_TIMER == 5
 # define PWMIN_TIMER_BASE	STM32_TIM5_BASE
 # define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
-# define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM5EN
+# define PWMIN_TIMER_POWER_BIT	RCC_APB1ENR_TIM5EN
 # define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM5
 # define PWMIN_TIMER_CLOCK	STM32_APB1_TIM5_CLKIN
 #elif PWMIN_TIMER == 8
@@ -133,28 +133,28 @@
 # define PWMIN_TIMER_CLOCK	STM32_APB2_TIM8_CLKIN
 #elif PWMIN_TIMER == 9
 # define PWMIN_TIMER_BASE	STM32_TIM9_BASE
-# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
+# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB2ENR
 # define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM9EN
 # define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM1BRK
-# define PWMIN_TIMER_CLOCK	STM32_APB1_TIM9_CLKIN
+# define PWMIN_TIMER_CLOCK	STM32_APB2_TIM9_CLKIN
 #elif PWMIN_TIMER == 10
 # define PWMIN_TIMER_BASE	STM32_TIM10_BASE
-# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
+# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB2ENR
 # define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM10EN
 # define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM1UP
 # define PWMIN_TIMER_CLOCK	STM32_APB2_TIM10_CLKIN
 #elif PWMIN_TIMER == 11
 # define PWMIN_TIMER_BASE	STM32_TIM11_BASE
-# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
+# define PWMIN_TIMER_POWER_REG	STM32_RCC_APB2ENR
 # define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM11EN
 # define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM1TRGCOM
 # define PWMIN_TIMER_CLOCK	STM32_APB2_TIM11_CLKIN
 #elif PWMIN_TIMER == 12
 # define PWMIN_TIMER_BASE	STM32_TIM12_BASE
 # define PWMIN_TIMER_POWER_REG	STM32_RCC_APB1ENR
-# define PWMIN_TIMER_POWER_BIT	RCC_APB2ENR_TIM12EN
-# define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM1TRGCOM
-# define PWMIN_TIMER_CLOCK	STM32_APB2_TIM12_CLKIN
+# define PWMIN_TIMER_POWER_BIT	RCC_APB1ENR_TIM12EN
+# define PWMIN_TIMER_VECTOR	STM32_IRQ_TIM8BRK
+# define PWMIN_TIMER_CLOCK	STM32_APB1_TIM12_CLKIN
 #else
 # error PWMIN_TIMER must be a value between 1 and 12
 #endif
@@ -317,7 +317,11 @@ void PWMIN::_timer_init(void)
 	/* run with interrupts disabled in case the timer is already
 	 * setup. We don't want it firing while we are doing the setup */
 	irqstate_t flags = irqsave();
+
+	/* configure input pin */
 	stm32_configgpio(GPIO_PWM_IN);
+	/* configure reset pin */
+	stm32_configgpio(GPIO_VDD_RANGEFINDER_EN);
 
 	/* claim our interrupt vector */
 	irq_attach(PWMIN_TIMER_VECTOR, pwmin_tim_isr);
@@ -366,7 +370,32 @@ void PWMIN::_timer_init(void)
 
 	_timer_started = true;
 
-	perf_count(_perf_reset);
+void
+PWMIN::_freeze_test()
+{
+	/* reset if last poll time was way back and a read was recently requested */
+	if (hrt_elapsed_time(&_last_poll_time) > TIMEOUT_POLL && hrt_elapsed_time(&_last_read_time) < TIMEOUT_READ) {
+		hard_reset();
+	}
+}
+
+void
+PWMIN::_turn_on()
+{
+	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 1);
+}
+
+void
+PWMIN::_turn_off()
+{
+	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 0);
+}
+
+void
+PWMIN::hard_reset()
+{
+	_turn_off();
+	hrt_call_after(&_hard_reset_call, 9000, reinterpret_cast<hrt_callout>(&PWMIN::_turn_on), this);
 }
 
 /*

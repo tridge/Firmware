@@ -93,6 +93,7 @@ AttPosEKF::AttPosEKF() :
     correctedDelVel(),
     summedDelAng(),
     summedDelVel(),
+    prevDelAng(),
     accNavMag(),
     earthRateNED(),
     angRate(),
@@ -270,12 +271,10 @@ void AttPosEKF::UpdateStrapdownEquationsNED()
     delAngTotal.y += correctedDelAng.y;
     delAngTotal.z += correctedDelAng.z;
 
-    // Save current measurements
-    Vector3f  prevDelAng = correctedDelAng;
-
     // Apply corrections for earths rotation rate and coning errors
     // * and + operators have been overloaded
-    correctedDelAng   = correctedDelAng - Tnb*earthRateNED*dtIMU + 8.333333333333333e-2f*(prevDelAng % correctedDelAng);
+    correctedDelAng = correctedDelAng - Tnb*earthRateNED*dtIMU + 8.333333333333333e-2f*(prevDelAng % correctedDelAng);
+    prevDelAng = correctedDelAng;
 
     // Convert the rotation vector to its equivalent quaternion
     rotationMag = correctedDelAng.length();
@@ -3287,6 +3286,7 @@ void AttPosEKF::ZeroVariables()
     correctedDelAng.zero();
     summedDelAng.zero();
     summedDelVel.zero();
+    prevDelAng.zero();
     dAngIMU.zero();
     dVelIMU.zero();
     lastGyroOffset.zero();
@@ -3336,4 +3336,11 @@ void AttPosEKF::GetLastErrorState(struct ekf_status_report *last_error)
 void AttPosEKF::setIsFixedWing(const bool fixedWing)
 {
     _isFixedWing = fixedWing;
+}
+
+void AttPosEKF::get_covariance(float c[EKF_STATE_ESTIMATES])
+{
+    for (unsigned int i = 0; i < EKF_STATE_ESTIMATES; i++) {
+        c[i] = P[i][i];
+    }
 }

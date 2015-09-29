@@ -606,7 +606,7 @@ MPU9250::init()
 
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("SPI setup failed");
+		DEVICE_DEBUG("SPI setup failed");
 		return ret;
 	}
 
@@ -642,7 +642,7 @@ MPU9250::init()
 	ret = _gyro->init();
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("gyro init failed");
+		DEVICE_DEBUG("gyro init failed");
 		return ret;
 	}
 
@@ -753,7 +753,7 @@ MPU9250::probe()
 		return OK;
 	}
 
-	debug("unexpected whoami 0x%02x", _whoami);
+	DEVICE_DEBUG("unexpected whoami 0x%02x", _whoami);
 	return -EIO;
 }
 
@@ -1136,12 +1136,16 @@ MPU9250::ioctl(struct file *filp, int cmd, unsigned long arg)
 	case ACCELIOCSELFTEST:
 		return accel_self_test();
 
+#ifdef ACCELIOCSHWLOWPASS
 	case ACCELIOCSHWLOWPASS:
 		_set_dlpf_filter(arg);
 		return OK;
+#endif
 
+#ifdef ACCELIOCGHWLOWPASS
 	case ACCELIOCGHWLOWPASS:
 		return _dlpf_freq;
+#endif
 
 
 	default:
@@ -1218,12 +1222,16 @@ MPU9250::gyro_ioctl(struct file *filp, int cmd, unsigned long arg)
 	case GYROIOCSELFTEST:
 		return gyro_self_test();
 
+#ifdef GYROIOCSHWLOWPASS
 	case GYROIOCSHWLOWPASS:
 		_set_dlpf_filter(arg);
 		return OK;
+#endif
 
+#ifdef GYROIOCGHWLOWPASS
 	case GYROIOCGHWLOWPASS:
 		return _dlpf_freq;
+#endif
 
 	default:
 		/* give it to the superclass */
@@ -1708,7 +1716,7 @@ MPU9250_gyro::init()
 
 	/* if probe/setup failed, bail now */
 	if (ret != OK) {
-		debug("gyro init failed");
+		DEVICE_DEBUG("gyro init failed");
 		return ret;
 	}
 

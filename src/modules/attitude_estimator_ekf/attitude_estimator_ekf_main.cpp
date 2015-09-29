@@ -63,6 +63,7 @@
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/vision_position_estimate.h>
+#include <uORB/topics/att_pos_mocap.h>
 #include <drivers/drv_hrt.h>
 
 #include <lib/mathlib/mathlib.h>
@@ -261,6 +262,9 @@ int attitude_estimator_ekf_thread_main(int argc, char *argv[])
 	/* subscribe to vision estimate */
 	int vision_sub = orb_subscribe(ORB_ID(vision_position_estimate));
 
+	/* subscribe to mocap data */
+	int mocap_sub = orb_subscribe(ORB_ID(att_pos_mocap));
+
 	/* advertise attitude */
 	orb_advert_t pub_att = orb_advertise(ORB_ID(vehicle_attitude), &att);
 
@@ -291,6 +295,7 @@ int attitude_estimator_ekf_thread_main(int argc, char *argv[])
 	R_decl.identity();
 
 	struct vision_position_estimate_s vision {};
+	struct att_pos_mocap_s mocap {};
 
 	/* register the perf counter */
 	perf_counter_t ekf_loop_perf = perf_alloc(PC_ELAPSED, "attitude_estimator_ekf");
@@ -378,10 +383,10 @@ int attitude_estimator_ekf_thread_main(int argc, char *argv[])
 					uint8_t update_vect[3] = {0, 0, 0};
 
 					/* Fill in gyro measurements */
-					if (sensor_last_timestamp[0] != raw.timestamp) {
+					if (sensor_last_timestamp[0] != raw.gyro_timestamp[0]) {
 						update_vect[0] = 1;
 						// sensor_update_hz[0] = 1e6f / (raw.timestamp - sensor_last_timestamp[0]);
-						sensor_last_timestamp[0] = raw.timestamp;
+						sensor_last_timestamp[0] = raw.gyro_timestamp[0];
 					}
 
 					z_k[0] =  raw.gyro_rad_s[0] - gyro_offsets[0];
@@ -389,10 +394,10 @@ int attitude_estimator_ekf_thread_main(int argc, char *argv[])
 					z_k[2] =  raw.gyro_rad_s[2] - gyro_offsets[2];
 
 					/* update accelerometer measurements */
-					if (sensor_last_timestamp[1] != raw.accelerometer_timestamp) {
+					if (sensor_last_timestamp[1] != raw.accelerometer_timestamp[0]) {
 						update_vect[1] = 1;
 						// sensor_update_hz[1] = 1e6f / (raw.timestamp - sensor_last_timestamp[1]);
-						sensor_last_timestamp[1] = raw.accelerometer_timestamp;
+						sensor_last_timestamp[1] = raw.accelerometer_timestamp[0];
 					}
 
 					hrt_abstime vel_t = 0;
@@ -432,24 +437,43 @@ int attitude_estimator_ekf_thread_main(int argc, char *argv[])
 					z_k[5] = raw.accelerometer_m_s2[2] - acc(2);
 
 					/* update magnetometer measurements */
-					if (sensor_last_timestamp[2] != raw.magnetometer_timestamp &&
+					if (sensor_last_timestamp[2] != raw.magnetometer_timestamp[0] &&
 						/* check that the mag vector is > 0 */
 						fabsf(sqrtf(raw.magnetometer_ga[0] * raw.magnetometer_ga[0] +
 							raw.magnetometer_ga[1] * raw.magnetometer_ga[1] +
 							raw.magnetometer_ga[2] * raw.magnetometer_ga[2])) > 0.1f) {
 						update_vect[2] = 1;
 						// sensor_update_hz[2] = 1e6f / (raw.timestamp - sensor_last_timestamp[2]);
-						sensor_last_timestamp[2] = raw.magnetometer_timestamp;
+						sensor_last_timestamp[2] = raw.magnetometer_timestamp[0];
 					}
 
 					bool vision_updated = false;
 					orb_check(vision_sub, &vision_updated);
 
+					bool mocap_updated = false;
+					orb_check(mocap_sub, &mocap_updated);
+
 					if (vision_updated) {
 						orb_copy(ORB_ID(vision_position_estimate), vision_sub, &vision);
 					}
 
-					if (vision.timestamp_boot > 0 && (hrt_elapsed_time(&vision.timestamp_boot) < 500000)) {
+					if (mocap_updated) {
+						orb_copy(ORB_ID(att_pos_mocap), mocap_sub, &mocap);
+					}
+
+					if (mocap.timestamp_boot > 0 && (hrt_elapsed_time(&mocap.timestamp_boot) < 500000)) {
+
+						math::Quaternion q(mocap.q);
+						math::Matrix<3, 3> Rmoc = q.to_dcm();
+
+						math::Vector<3> v(1.0f, 0.0f, 0.4f);
+
+						math::Vector<3> vn = Rmoc.transposed() * v; //Rmoc is Rwr (robot respect to world) while v is respect to world. Hence Rmoc must be transposed having (Rwr)' * Vw
+											    // Rrw * Vw = vn. This way we have consistency
+						z_k[6] = vn(0);
+						z_k[7] = vn(1);
+						z_k[8] = vn(2);
+					}else if (vision.timestamp_boot > 0 && (hrt_elapsed_time(&vision.timestamp_boot) < 500000)) {
 
 						math::Quaternion q(vision.q);
 						math::Matrix<3, 3> Rvis = q.to_dcm();

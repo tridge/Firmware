@@ -52,7 +52,6 @@
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/parameter_update.h>
 #include <uORB/topics/estimator_status.h>
 #include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/home_position.h>
@@ -66,13 +65,20 @@
 #include <drivers/drv_mag.h>
 #include <drivers/drv_baro.h>
 
+#include <mathlib/math/filter/LowPassFilter2p.hpp>
+
 #include <geo/geo.h>
 #include <systemlib/perf_counter.h>
+#include <lib/ecl/validation/data_validator_group.h>
+#include "estimator_22states.h"
+
+#include <controllib/blocks.hpp>
+#include <controllib/block/BlockParam.hpp>
 
 //Forward declaration
 class AttPosEKF;
 
-class AttitudePositionEstimatorEKF
+class AttitudePositionEstimatorEKF : public control::SuperBlock
 {
 public:
     /**
@@ -166,17 +172,18 @@ private:
     struct vehicle_land_detected_s      _landDetector;
     struct actuator_armed_s             _armed;
 
-    struct gyro_scale               _gyro_offsets[3];
-    struct accel_scale              _accel_offsets[3];
-    struct mag_scale                _mag_offsets[3];
+    hrt_abstime _last_accel;
+    hrt_abstime _last_mag;
 
     struct sensor_combined_s            _sensor_combined;
 
     struct map_projection_reference_s   _pos_ref;
 
-    float                       _baro_ref_offset;   /**< offset between initial baro reference and GPS init baro altitude */
+    float                       _filter_ref_offset;   /**< offset between initial baro reference and GPS init baro altitude */
     float                       _baro_gps_offset;   /**< offset between baro altitude (at GPS init time) and GPS altitude */
     hrt_abstime                 _last_debug_print = 0;
+    float       _vibration_warning_threshold = 1.0f;
+    hrt_abstime _vibration_warning_timestamp = 0;
 
     perf_counter_t  _loop_perf;         ///< loop performance counter
     perf_counter_t  _loop_intvl;        ///< loop rate counter
@@ -193,18 +200,19 @@ private:
     bool            _gpsIsGood;               ///< True if the current GPS fix is good enough for us to use
     uint64_t        _previousGPSTimestamp;    ///< Timestamp of last good GPS fix we have received
     bool            _baro_init;
-    float           _baroAltRef;
     bool            _gps_initialized;
     hrt_abstime     _filter_start_time;
     hrt_abstime     _last_sensor_timestamp;
-    hrt_abstime     _last_run;
     hrt_abstime     _distance_last_valid;
-    bool            _gyro_valid;
-    bool            _accel_valid;
-    bool            _mag_valid;
+    DataValidatorGroup _voter_gyro;
+    DataValidatorGroup _voter_accel;
+    DataValidatorGroup _voter_mag;
     int             _gyro_main;         ///< index of the main gyroscope
     int             _accel_main;        ///< index of the main accelerometer
     int             _mag_main;          ///< index of the main magnetometer
+    bool            _data_good;         ///< all required filter data is ok
+    bool            _failsafe;          ///< failsafe on one of the sensors
+    bool            _vibration_warning; ///< high vibration levels detected
     bool            _ekf_logging;       ///< log EKF state
     unsigned        _debug;             ///< debug level - default 0
 
@@ -214,6 +222,10 @@ private:
     bool            _newRangeData;
 
     int             _mavlink_fd;
+
+    control::BlockParamFloat _mag_offset_x;
+    control::BlockParamFloat _mag_offset_y;
+    control::BlockParamFloat _mag_offset_z;
 
     struct {
         int32_t vel_delay_ms;
@@ -258,6 +270,11 @@ private:
     }       _parameter_handles;     /**< handles for interesting parameters */
 
     AttPosEKF                   *_ekf;
+
+    /* Low pass filter for attitude rates */
+    math::LowPassFilter2p _LP_att_P;
+    math::LowPassFilter2p _LP_att_Q;
+    math::LowPassFilter2p _LP_att_R;
 
 private:
     /**
@@ -332,6 +349,12 @@ private:
     *   Should only be required to call once
     **/
     void initializeGPS();
+
+    /**
+     * Initialize the reference position for the local coordinate frame
+     */
+    void initReferencePosition(hrt_abstime timestamp, bool gps_valid,
+            double lat, double lon, float gps_alt, float baro_alt);
 
     /**
     * @brief

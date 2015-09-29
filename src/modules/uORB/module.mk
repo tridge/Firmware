@@ -46,14 +46,21 @@ SRCS			= uORBDevices_nuttx.cpp \
  
 else
 SRCS			= uORBDevices_posix.cpp \
-			  uORBTest_UnitTest.cpp \
 			  uORBManager_posix.cpp
 endif
+
+ifeq ($(PX4_TARGET_OS),posix)
+SRCS 			+= uORBTest_UnitTest.cpp
+endif
+ifeq ($(PX4_TARGET_OS),posix-arm)
+SRCS 			+= uORBTest_UnitTest.cpp
+endif
+
 SRCS	+= 		  objects_common.cpp \
-			  Publication.cpp \
-			  Subscription.cpp \
 			  uORBUtils.cpp \
 			  uORB.cpp \
-			  uORBMain.cpp
+			  uORBMain.cpp \
+			  Publication.cpp \
+			  Subscription.cpp
 
 MAXOPTIMIZATION	 = -Os

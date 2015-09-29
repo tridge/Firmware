@@ -54,10 +54,15 @@
 #include <string>
 
 #include <px4_tasks.h>
+#include <px4_posix.h>
 
 #define MAX_CMD_LEN 100
 
-#define PX4_MAX_TASKS 100
+#define PX4_MAX_TASKS 50
+#define SHELL_TASK_ID (PX4_MAX_TASKS+1)
+
+pthread_t _shell_task_id = 0;
+
 struct task_entry
 {
 	pthread_t pid;
@@ -94,6 +99,7 @@ void
 px4_systemreset(bool to_bootloader)
 {
 	PX4_WARN("Called px4_system_reset");
+	exit(0);
 }
 
 px4_task_t px4_task_spawn_cmd(const char *name, int scheduler, int priority, int stack_size, px4_main_t entry, char * const argv[])
@@ -136,6 +142,8 @@ px4_task_t px4_task_spawn_cmd(const char *name, int scheduler, int priority, int
 	}
 	// Must add NULL at end of argv
 	taskdata->argv[argc] = (char *)0;
+
+	PX4_DEBUG("starting task %s", name);
 
 	rv = pthread_attr_init(&attr);
 	if (rv != 0) {
@@ -195,7 +203,7 @@ int px4_task_delete(px4_task_t id)
 {
 	int rv = 0;
 	pthread_t pid;
-	PX4_WARN("Called px4_task_delete");
+	PX4_DEBUG("Called px4_task_delete");
 
 	if (id < PX4_MAX_TASKS && taskmap[id].isused)
 		pid = taskmap[id].pid;
@@ -243,7 +251,7 @@ int px4_task_kill(px4_task_t id, int sig)
 	pthread_t pid;
 	PX4_DEBUG("Called px4_task_kill %d", sig);
 
-	if (id < PX4_MAX_TASKS && taskmap[id].pid != 0)
+	if (id < PX4_MAX_TASKS && taskmap[id].isused && taskmap[id].pid != 0)
 		pid = taskmap[id].pid;
 	else
 		return -EINVAL;
@@ -272,7 +280,25 @@ void px4_show_tasks()
 
 }
 
+bool px4_task_is_running(const char *taskname)
+{
+	int idx;
+	for (idx=0; idx < PX4_MAX_TASKS; idx++)
+	{
+		if (taskmap[idx].isused && (strcmp(taskmap[idx].name.c_str(), taskname) == 0)) {
+			return true;
+		}
+	}
+	return false;
+}
 __BEGIN_DECLS
+
+unsigned long px4_getpid()
+{
+	return (unsigned long)pthread_self();
+}
+
+const char *getprogname();
 const char *getprogname()
 {
         pthread_t pid = pthread_self();

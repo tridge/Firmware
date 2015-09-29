@@ -12,8 +12,6 @@
 
 #include <sys/timespec.h>
 
-#define CLOCK_REALTIME 1
-
 __BEGIN_DECLS
 
 #if 0
@@ -28,7 +26,6 @@ struct timespec
 int px4_clock_gettime(clockid_t clk_id, struct timespec *tp);
 int px4_clock_settime(clockid_t clk_id, struct timespec *tp);
 
-__EXPORT int usleep(useconds_t usec);
 __EXPORT unsigned int sleep(unsigned int sec);
 
 __END_DECLS

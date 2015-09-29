@@ -46,6 +46,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include "systemlib/param/param.h"
+#include "hrt_work.h"
+#include <drivers/drv_hrt.h>
+
+extern pthread_t _shell_task_id;
 
 __BEGIN_DECLS
 
@@ -62,13 +66,21 @@ void init_once(void);
 
 void init_once(void)
 {
+	_shell_task_id = pthread_self();
+	PX4_INFO("Shell id is %lu", _shell_task_id);
 	work_queues_init();
+	hrt_work_queue_init();
 	hrt_init();
 }
 
 void init(int argc, char *argv[], const char *app_name)
 {
 	printf("App name: %s\n", app_name);
+}
+
+uint64_t get_time_micros()
+{
+	return hrt_absolute_time();
 }
 
 }

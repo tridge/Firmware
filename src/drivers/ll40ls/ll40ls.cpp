@@ -113,6 +113,10 @@ LidarLite * get_dev(const bool use_i2c, const int bus) {
  */
 void start(const bool use_i2c, const int bus)
 {
+	if (g_dev_int != nullptr || g_dev_ext != nullptr || g_dev_pwm != nullptr) {
+		errx(1,"driver already started");
+	}
+
 	if (use_i2c) {
 		/* create the driver, attempt expansion bus first */
 		if (bus == -1 || bus == PX4_I2C_BUS_EXPANSION) {
@@ -329,6 +333,8 @@ test(const bool use_i2c, const int bus)
 		}
 
 		warnx("periodic read %u", i);
+		warnx("valid %u", (float)report.current_distance > report.min_distance
+			&& (float)report.current_distance < report.max_distance ? 1 : 0);
 		warnx("measurement: %0.3f m", (double)report.current_distance);
 		warnx("time:        %lld", report.timestamp);
 	}
@@ -462,7 +468,6 @@ ll40ls_main(int argc, char *argv[])
 
 		/* Start/load the driver. */
 		if (!strcmp(verb, "start")) {
-
 			ll40ls::start(use_i2c, bus);
 		}
 

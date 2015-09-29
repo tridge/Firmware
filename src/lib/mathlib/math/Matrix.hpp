@@ -126,15 +126,6 @@ public:
 		memcpy(data, d, sizeof(data));
 	}
 
-#if defined(__PX4_ROS)
-	/**
-	 * set data from boost::array
-	 */
-	void set(const boost::array<float, 9ul> d) {
-	set(static_cast<const float*>(d.data()));
-	}
-#endif
-
 	/**
 	 * set row from vector
 	 */
@@ -294,7 +285,7 @@ public:
 
 		for (unsigned int i = 0; i < M; i++)
 			for (unsigned int j = 0; j < N; j++)
-				res[i][j] = data[i][j] / num;
+				res.data[i][j] = data[i][j] / num;
 
 		return res;
 	}
@@ -384,7 +375,7 @@ public:
 			printf("[ ");
 
 			for (unsigned int j = 0; j < N; j++)
-				printf("%.3f\t", data[i][j]);
+				printf("%.3f\t", (double)data[i][j]);
 
 			printf(" ]\n");
 		}
@@ -445,6 +436,21 @@ public:
 	Matrix(const float *d) : MatrixBase<3, 3>(d) {}
 
 	Matrix(const float d[3][3]) : MatrixBase<3, 3>(d) {}
+	/**
+	 * set data
+	 */
+	void set(const float d[9]) {
+		memcpy(data, d, sizeof(data));
+	}
+
+#if defined(__PX4_ROS)
+	/**
+	 * set data from boost::array
+	 */
+	void set(const boost::array<float, 9ul> d) {
+	set(static_cast<const float*>(d.data()));
+	}
+#endif
 
 	/**
 	 * set to value

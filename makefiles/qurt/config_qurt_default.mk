@@ -12,10 +12,10 @@
 #
 MODULES		+= drivers/device
 MODULES		+= drivers/blinkm
-MODULES		+= drivers/hil
+MODULES		+= drivers/pwm_out_sim
 MODULES		+= drivers/led
 MODULES		+= drivers/rgbled
-#MODULES		+= modules/sensors
+MODULES		+= modules/sensors
 #MODULES		+= drivers/ms5611
 
 #
@@ -47,7 +47,7 @@ MODULES		+= modules/systemlib/mixer
 MODULES		+= modules/uORB
 #MODULES		+= modules/dataman
 #MODULES		+= modules/sdlog2
-MODULES		+= modules/simulator
+#MODULES		+= modules/simulator
 #MODULES		+= modules/commander
 
 #
@@ -63,6 +63,7 @@ MODULES		+= lib/conversion
 # QuRT port
 #
 MODULES		+= platforms/qurt/px4_layer
+MODULES		+= platforms/posix/work_queue
 MODULES		+= platforms/posix/drivers/accelsim
 MODULES		+= platforms/posix/drivers/gyrosim
 MODULES		+= platforms/posix/drivers/adcsim
@@ -76,3 +77,7 @@ MODULES		+= platforms/posix/tests/vcdev_test
 MODULES		+= platforms/posix/tests/hrt_test
 MODULES		+= platforms/posix/tests/wqueue
 
+#
+# sources for muorb over fastrpc
+#
+#MODULES         += $(PX4_BASE)/../muorb_qurt/
