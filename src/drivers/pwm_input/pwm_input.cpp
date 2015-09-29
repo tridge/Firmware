@@ -320,8 +320,6 @@ void PWMIN::_timer_init(void)
 
 	/* configure input pin */
 	stm32_configgpio(GPIO_PWM_IN);
-	/* configure reset pin */
-	stm32_configgpio(GPIO_VDD_RANGEFINDER_EN);
 
 	/* claim our interrupt vector */
 	irq_attach(PWMIN_TIMER_VECTOR, pwmin_tim_isr);
@@ -369,33 +367,6 @@ void PWMIN::_timer_init(void)
 	irqrestore(flags);
 
 	_timer_started = true;
-
-void
-PWMIN::_freeze_test()
-{
-	/* reset if last poll time was way back and a read was recently requested */
-	if (hrt_elapsed_time(&_last_poll_time) > TIMEOUT_POLL && hrt_elapsed_time(&_last_read_time) < TIMEOUT_READ) {
-		hard_reset();
-	}
-}
-
-void
-PWMIN::_turn_on()
-{
-	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 1);
-}
-
-void
-PWMIN::_turn_off()
-{
-	stm32_gpiowrite(GPIO_VDD_RANGEFINDER_EN, 0);
-}
-
-void
-PWMIN::hard_reset()
-{
-	_turn_off();
-	hrt_call_after(&_hard_reset_call, 9000, reinterpret_cast<hrt_callout>(&PWMIN::_turn_on), this);
 }
 
 /*
