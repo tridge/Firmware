@@ -64,6 +64,14 @@ NUTTX_ARCHIVES		 = $(foreach board,$(BOARDS),$(ARCHIVE_DIR)$(board).export)
 .PHONY:			archives
 archives:		checksubmodules $(NUTTX_ARCHIVES)
 
+# We cannot build these parallel; note that we also force -j1 for the
+# sub-make invocations.
+ifneq ($(filter archives,$(MAKECMDGOALS)),)
+.NOTPARALLEL:
+endif
+
+J?=1
+
 $(ARCHIVE_DIR)%.export:	board = $(notdir $(basename $@))
 $(ARCHIVE_DIR)%.export:	configuration = nsh
 $(NUTTX_ARCHIVES): $(ARCHIVE_DIR)%.export: $(NUTTX_SRC)

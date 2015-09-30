@@ -200,7 +200,7 @@ testbuild:
 
 nuttx posix posix-arm qurt: 
 ifeq ($(GOALS),)
-	+$(MAKE) PX4_TARGET_OS=$@ $(GOALS)
+	$(MAKE) PX4_TARGET_OS=$@ $(GOALS)
 else
 	export PX4_TARGET_OS=$@
 endif
@@ -244,7 +244,7 @@ clean:
 distclean: clean
 	@echo > /dev/null
 	$(Q) $(REMOVE) $(ARCHIVE_DIR)*.export
-	$(Q)+ $(MAKE) -C $(NUTTX_SRC) -r $(MQUIET) distclean
+	$(Q) $(MAKE) -C $(NUTTX_SRC) -r $(MQUIET) distclean
 	$(Q) (cd $(NUTTX_SRC)/configs && $(FIND) . -maxdepth 1 -type l -delete)
 
 #

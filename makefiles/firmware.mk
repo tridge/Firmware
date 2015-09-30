@@ -246,7 +246,7 @@ $(MODULE_CLEANS):	relpath = $(patsubst $(WORK_DIR)%,%,$@)
 $(MODULE_CLEANS):	mkfile = $(patsubst %clean,%module.mk,$(relpath))
 $(MODULE_CLEANS):
 	@$(ECHO) %% cleaning using $(mkfile)
-	$(Q)+ $(MAKE) -r -f $(PX4_MK_DIR)module.mk \
+	$(Q) $(MAKE) -r -f $(PX4_MK_DIR)module.mk \
 	MODULE_WORK_DIR=$(dir $@) \
 	MODULE_MK=$(mkfile) \
 	clean
@@ -306,7 +306,7 @@ $(LIBRARY_CLEANS):	relpath = $(patsubst $(WORK_DIR)%,%,$@)
 $(LIBRARY_CLEANS):	mkfile = $(patsubst %clean,%library.mk,$(relpath))
 $(LIBRARY_CLEANS):
 	@$(ECHO) %% cleaning using $(mkfile)
-	$(Q)+ $(MAKE) -r -f $(PX4_MK_DIR)library.mk \
+	$(Q) $(MAKE) -r -f $(PX4_MK_DIR)library.mk \
 	LIBRARY_WORK_DIR=$(dir $@) \
 	LIBRARY_MK=$(mkfile) \
 	clean
