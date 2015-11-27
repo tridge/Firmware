@@ -331,6 +331,10 @@ PX4FMU::PX4FMU() :
 
 #ifdef SBUS_SERIAL_PORT
 	_sbus_fd = sbus_init(SBUS_SERIAL_PORT, false);
+#ifdef GPIO_SBUS_INV
+	// this board has a GPIO to control SBUS inversion
+	stm32_configgpio(GPIO_SBUS_INV);
+#endif
 #endif
 
 #ifdef DSM_SERIAL_PORT
