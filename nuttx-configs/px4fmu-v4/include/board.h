@@ -193,6 +193,7 @@
  */
 
 #define DMAMAP_SDIO DMAMAP_SDIO_1
+#define DMAMAP_USART6_RX DMAMAP_USART6_RX_2
 
 /* Alternate function pin selections ************************************************/
 
