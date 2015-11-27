@@ -193,7 +193,6 @@
  */
 
 #define DMAMAP_SDIO DMAMAP_SDIO_1
-#define DMAMAP_USART6_RX DMAMAP_USART6_RX_2
 
 /* Alternate function pin selections ************************************************/
 
@@ -216,16 +215,17 @@
 #define GPIO_UART4_RX	GPIO_UART4_RX_1
 #define GPIO_UART4_TX	GPIO_UART4_TX_1
 
-#define GPIO_UART7_RX	GPIO_UART7_RX_1
-#define GPIO_UART7_TX	GPIO_UART7_TX_1
-
 #define GPIO_USART6_RX	GPIO_USART6_RX_1
 #define GPIO_USART6_TX	GPIO_USART6_TX_1
+
+#define GPIO_UART7_RX	GPIO_UART7_RX_1
+#define GPIO_UART7_TX	GPIO_UART7_TX_1
 
 /* UART8 has no alternate pin config */
 
 /* UART RX DMA configurations */
 #define DMAMAP_USART1_RX DMAMAP_USART1_RX_2
+#define DMAMAP_USART6_RX DMAMAP_USART6_RX_2
 
 /*
  * CAN

@@ -38,16 +38,13 @@
  */
 
 #include <px4_config.h>
-#include <board_config.h>
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <termios.h>
 
 #include "sbus.h"
 #include <drivers/drv_hrt.h>
-#include <sys/ioctl.h>
-
-#pragma GCC optimize("O0")
 
 #define SBUS_FRAME_SIZE		25
 #define SBUS_INPUT_CHANNELS	16
@@ -94,39 +91,17 @@ sbus_init(const char *device, bool singlewire)
 
 	if (sbus_fd >= 0) {
 		struct termios t;
-		int ret;
-                
+
 		/* 100000bps, even parity, two stop bits */
-		ret = tcgetattr(sbus_fd, &t);
-		if (ret != 0) {
-			close(sbus_fd);
-			return -1;
-		}
-		ret = cfsetspeed(&t, 100000);
-		if (ret != 0) {
-			close(sbus_fd);
-			return -1;
-		}
+		tcgetattr(sbus_fd, &t);
+		cfsetspeed(&t, 100000);
 		t.c_cflag |= (CSTOPB | PARENB);
-		t.c_cflag &= ~CRTSCTS;
-		t.c_oflag &= ~ONLCR;                
-		ret = tcsetattr(sbus_fd, TCSANOW, &t);
-		if (ret != 0) {
-			close(sbus_fd);
-			return -1;
-		}
+		tcsetattr(sbus_fd, TCSANOW, &t);
 
 		if (singlewire) {
 			/* only defined in configs capable of IOCTL */
-#ifdef TIOCSSINGLEWIRE
-			ret = ioctl(sbus_fd, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
-			if (ret != 0) {
-				close(sbus_fd);
-				return -1;
-			}
-#else
-			close(sbus_fd);
-			return -1;
+#ifdef SBUS_SERIAL_PORT
+			ioctl(uart, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
 #endif
 		}
 
