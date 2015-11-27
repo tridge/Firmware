@@ -38,13 +38,16 @@
  */
 
 #include <px4_config.h>
-
+#include <board_config.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <termios.h>
 
 #include "sbus.h"
 #include <drivers/drv_hrt.h>
+#include <sys/ioctl.h>
+
+#pragma GCC optimize("O0")
 
 #define SBUS_FRAME_SIZE		25
 #define SBUS_INPUT_CHANNELS	16
@@ -100,8 +103,11 @@ sbus_init(const char *device, bool singlewire)
 
 		if (singlewire) {
 			/* only defined in configs capable of IOCTL */
-#ifdef SBUS_SERIAL_PORT
-			ioctl(uart, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
+#ifdef TIOCSSINGLEWIRE
+			ioctl(sbus_fd, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
+#else
+			close(sbus_fd);
+			return -1;
 #endif
 		}
 
