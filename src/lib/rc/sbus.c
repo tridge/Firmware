@@ -94,17 +94,36 @@ sbus_init(const char *device, bool singlewire)
 
 	if (sbus_fd >= 0) {
 		struct termios t;
-
+		int ret;
+                
 		/* 100000bps, even parity, two stop bits */
-		tcgetattr(sbus_fd, &t);
-		cfsetspeed(&t, 100000);
+		ret = tcgetattr(sbus_fd, &t);
+		if (ret != 0) {
+			close(sbus_fd);
+			return -1;
+		}
+		ret = cfsetspeed(&t, 100000);
+		if (ret != 0) {
+			close(sbus_fd);
+			return -1;
+		}
 		t.c_cflag |= (CSTOPB | PARENB);
-		tcsetattr(sbus_fd, TCSANOW, &t);
+		t.c_cflag &= ~CRTSCTS;
+		t.c_oflag &= ~ONLCR;                
+		ret = tcsetattr(sbus_fd, TCSANOW, &t);
+		if (ret != 0) {
+			close(sbus_fd);
+			return -1;
+		}
 
 		if (singlewire) {
 			/* only defined in configs capable of IOCTL */
 #ifdef TIOCSSINGLEWIRE
-			ioctl(sbus_fd, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
+			ret = ioctl(sbus_fd, TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED);
+			if (ret != 0) {
+				close(sbus_fd);
+				return -1;
+			}
 #else
 			close(sbus_fd);
 			return -1;
