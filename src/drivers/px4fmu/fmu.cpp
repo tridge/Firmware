@@ -90,8 +90,6 @@
 # include <systemlib/ppm_decode.h>
 #endif
 
-#pragma GCC optimize("O0")
-
 /*
  * This is the analog to FMU_INPUT_DROP_LIMIT_US on the IO side
  */
