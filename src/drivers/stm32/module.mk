@@ -38,7 +38,8 @@
 #
 
 SRCS		= drv_hrt.c \
-		  drv_pwm_servo.c
+		  drv_pwm_servo.c \
+		  drv_io_timer.c
 
 INCLUDE_DIRS	+= $(NUTTX_SRC)/arch/arm/src/stm32 $(NUTTX_SRC)/arch/arm/src/common
 
