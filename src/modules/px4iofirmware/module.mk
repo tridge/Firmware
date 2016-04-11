@@ -11,7 +11,6 @@ SRCS		= adc.c \
 		  mixer.cpp \
 		  ../systemlib/mixer/mixer.cpp \
 		  ../systemlib/mixer/mixer_group.cpp \
-		  ../systemlib/mixer/mixer_multirotor.cpp \
 		  ../systemlib/mixer/mixer_simple.cpp \
 		  ../systemlib/pwm_limit/pwm_limit.c \
 		  ../../lib/rc/st24.c \
