@@ -37,7 +37,10 @@
 
 MODULE_COMMAND	= mpu9250
 
-SRCS		= mpu9250.cpp
+SRCS		= mpu9250.cpp \
+		main.cpp \
+		gyro.cpp \
+		mag.cpp
 
 MODULE_STACKSIZE	= 1200
 
