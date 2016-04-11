@@ -185,6 +185,8 @@ EXTRA_CLEANS		 =
 #
 INCLUDE_DIRS		+= $(PX4_MODULE_SRC)drivers/boards/$(BOARD)
 
+INCLUDE_DIRS		+= $(PX4_MODULE_SRC)lib/matrix
+
 ################################################################################
 # OS specific libraries and paths
 ################################################################################
