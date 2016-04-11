@@ -49,7 +49,6 @@ makefiles/nuttx/config_px4fmu-v1_APM.mk
 makefiles/nuttx/config_px4fmu-v2_APM.mk
 mavlink/include/mavlink/v0.9/
 src/lib/dspal
-src/lib/matrix
 src/modules/uORB/topics/*
 src/platforms/nuttx/px4_messages/*
 src/platforms/posix/px4_messages/
