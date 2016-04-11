@@ -695,7 +695,7 @@ PX4IO::init()
 		// firmware
 		io_reg_set(PX4IO_PAGE_SETUP, PX4IO_P_SETUP_REBOOT_BL, PX4IO_REBOOT_BL_MAGIC);
 
-		mavlink_log_emergency(_mavlink_fd, "[IO] config read fail, abort.");
+		mavlink_log_emergency(&_mavlink_log_pub, "[IO] config read fail, abort.");
 		return -1;
 	}
 
