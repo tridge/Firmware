@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2015 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2015 ECL Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -12,7 +12,7 @@
 #    notice, this list of conditions and the following disclaimer in
 #    the documentation and/or other materials provided with the
 #    distribution.
-# 3. Neither the name PX4 nor the names of its contributors may be
+# 3. Neither the name ECL nor the names of its contributors may be
 #    used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -30,10 +30,15 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+set(MODULE_CFLAGS )
+if(${OS} STREQUAL "nuttx")
+	list(APPEND MODULE_CFLAGS -Wframe-larger-than=6000)
+endif()
+
 px4_add_module(
 	MODULE lib__ecl
-	COMPILE_FLAGS
-		-Os
+	STACK 6000
+	COMPILE_FLAGS ${MODULE_CFLAGS} -Os
 	SRCS
 		attitude_fw/ecl_controller.cpp
 		attitude_fw/ecl_pitch_controller.cpp
@@ -43,6 +48,14 @@ px4_add_module(
 		l1/ecl_l1_pos_controller.cpp
 		validation/data_validator.cpp
 		validation/data_validator_group.cpp
+		EKF/estimator_interface.cpp
+		EKF/ekf.cpp
+		EKF/ekf_helper.cpp
+		EKF/covariance.cpp
+		EKF/vel_pos_fusion.cpp
+		EKF/mag_fusion.cpp
+               EKF/gps_checks.cpp
+		EKF/control.cpp
 	DEPENDS
 		platforms__common
 	)

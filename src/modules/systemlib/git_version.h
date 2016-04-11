@@ -41,9 +41,7 @@
 
 #include <stdint.h>
 
-#ifdef CMAKE_BUILD
 #include "build_git_version.h"
-#endif
 
 __BEGIN_DECLS
 

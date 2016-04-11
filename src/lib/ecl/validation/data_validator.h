@@ -54,6 +54,13 @@ public:
 	 *
 	 * @param val		Item to put
 	 */
+	void			put(uint64_t timestamp, float val, uint64_t error_count, int priority);
+
+	/**
+	 * Put a 3D item into the validator.
+	 *
+	 * @param val		Item to put
+	 */
 	void			put(uint64_t timestamp, float val[3], uint64_t error_count, int priority);
 
 	/**
@@ -97,7 +104,7 @@ public:
 	 * Get the error state of this validator
 	 * @return		the bitmask with the error status
 	 */
-	uint32_t		state() { return (_error_mask); }
+	uint32_t		state() { return _error_mask; }
 	
 	/**
 	 * Reset the error state of this validator

@@ -192,10 +192,6 @@ function(px4_nuttx_add_export)
 		ARGN ${ARGN})
 
 	set(nuttx_src ${CMAKE_BINARY_DIR}/${CONFIG}/NuttX)
-	set(nuttx_original_src ${CMAKE_SOURCE_DIR}/NuttX)
-	if(NUTTX_SRC)
-		set(nuttx_original_src ${NUTTX_SRC})
-	endif()
 
 	# patch
 	add_custom_target(__nuttx_patch_${CONFIG})
@@ -218,7 +214,7 @@ function(px4_nuttx_add_export)
 	add_custom_command(OUTPUT nuttx_copy_${CONFIG}.stamp
 		COMMAND ${MKDIR} -p ${CMAKE_BINARY_DIR}/${CONFIG}
 		COMMAND ${MKDIR} -p ${nuttx_src}
-		COMMAND ${CP} -a ${nuttx_original_src}/. ${nuttx_src}/
+		COMMAND ${CP} -a ${CMAKE_SOURCE_DIR}/NuttX/. ${nuttx_src}/
 		COMMAND ${RM} -rf ${nuttx_src}/.git
 		COMMAND ${TOUCH} nuttx_copy_${CONFIG}.stamp
 		DEPENDS ${DEPENDS})
@@ -315,14 +311,8 @@ function(px4_nuttx_add_romfs)
 		REQUIRED OUT ROOT
 		ARGN ${ARGN})
 
-	if(IS_ABSOLUTE ${ROOT})
-		get_filename_component(romfs_name ${ROOT} NAME)
-		set(romfs_temp_dir ${CMAKE_BINARY_DIR}/tmp/custom-${romfs_name})
-		set(romfs_src_dir ${ROOT})
-	else()
-		set(romfs_temp_dir ${CMAKE_BINARY_DIR}/tmp/${ROOT})
-		set(romfs_src_dir ${CMAKE_SOURCE_DIR}/${ROOT})
-	endif()
+	set(romfs_temp_dir ${CMAKE_BINARY_DIR}/tmp/${ROOT})
+	set(romfs_src_dir ${CMAKE_SOURCE_DIR}/${ROOT})
 	set(romfs_autostart ${CMAKE_SOURCE_DIR}/Tools/px_process_airframes.py)
 	set(romfs_pruner ${CMAKE_SOURCE_DIR}/Tools/px_romfs_pruner.py)
 	set(bin_to_obj ${CMAKE_SOURCE_DIR}/cmake/nuttx/bin_to_obj.py)
@@ -439,6 +429,7 @@ function(px4_os_add_flags)
 		)
 	set(added_definitions
 		-D__PX4_NUTTX
+		-D__DF_NUTTX
 		)
 	set(added_c_flags
 		-nodefaultlibs
@@ -476,8 +467,24 @@ function(px4_os_add_flags)
 			-mfpu=fpv4-sp-d16
 			-mfloat-abi=hard
 			)
+	elseif (${BOARD} STREQUAL "px4-stm32f4discovery")
+		set(cpu_flags
+			-mcpu=cortex-m4
+			-mthumb
+			-march=armv7e-m
+			-mfpu=fpv4-sp-d16
+			-mfloat-abi=hard
+			)
 	elseif (${BOARD} STREQUAL "aerocore")
 		set(cpu_flags
+			-mcpu=cortex-m4
+			-mthumb
+			-march=armv7e-m
+			-mfpu=fpv4-sp-d16
+			-mfloat-abi=hard
+			)
+	elseif (${BOARD} STREQUAL "mindpx-v2")
+			set(cpu_flags
 			-mcpu=cortex-m4
 			-mthumb
 			-march=armv7e-m
@@ -506,6 +513,8 @@ function(px4_os_add_flags)
 		set(${${var}} ${${${var}}} ${added_${lower_var}} PARENT_SCOPE)
 		#message(STATUS "nuttx: set(${${var}} ${${${var}}} ${added_${lower_var}} PARENT_SCOPE)")
 	endforeach()
+
+	set(DF_TARGET "nuttx" PARENT_SCOPE)
 
 endfunction()
 
@@ -537,14 +546,10 @@ function(px4_os_prebuild_targets)
 			ONE_VALUE OUT BOARD THREADS
 			REQUIRED OUT BOARD
 			ARGN ${ARGN})
-	set(export_depends git_nuttx)
-	if(NUTTX_SRC)
-		set(export_depends)
-	endif()
 	px4_nuttx_add_export(OUT nuttx_export_${BOARD}
 		CONFIG ${BOARD}
 		THREADS ${THREADS}
-		DEPENDS ${export_depends})
+		DEPENDS git_nuttx)
 	add_custom_target(${OUT} DEPENDS nuttx_export_${BOARD})
 endfunction()
 

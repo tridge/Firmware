@@ -2,6 +2,8 @@ include(nuttx/px4_impl_nuttx)
 
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/toolchains/Toolchain-arm-none-eabi.cmake)
 
+set(config_uavcan_num_ifaces 1)
+
 set(config_module_list
 	#
 	# Board support modules
@@ -34,12 +36,14 @@ set(config_module_list
 	drivers/meas_airspeed
 	drivers/frsky_telemetry
 	modules/sensors
-	#drivers/mkblctrl
+	drivers/mkblctrl
 	drivers/px4flow
 	drivers/oreoled
 	drivers/gimbal
 	drivers/pwm_input
 	drivers/camera_trigger
+	drivers/bst
+	drivers/snapdragon_rc_pwm
 
 	#
 	# System commands
@@ -51,13 +55,14 @@ set(config_module_list
 	systemcmds/pwm
 	systemcmds/esc_calib
 	systemcmds/reboot
-	#systemcmds/topic_listener
+	systemcmds/topic_listener
 	systemcmds/top
 	systemcmds/config
 	systemcmds/nshterm
 	systemcmds/mtd
 	systemcmds/dumpfile
 	systemcmds/ver
+	systemcmds/tests
 
 	#
 	# General system control
@@ -77,6 +82,7 @@ set(config_module_list
 	modules/attitude_estimator_q
 	modules/ekf_att_pos_estimator
 	modules/position_estimator_inav
+	modules/ekf2
 
 	#
 	# Vehicle Control
@@ -106,9 +112,9 @@ set(config_module_list
 	#
 	# Libraries
 	#
-	#lib/mathlib/CMSIS
 	lib/mathlib
 	lib/mathlib/math/filter
+	lib/rc
 	lib/ecl
 	lib/external_lgpl
 	lib/geo
@@ -117,6 +123,7 @@ set(config_module_list
 	lib/launchdetection
 	lib/terrain_estimation
 	lib/runway_takeoff
+	lib/tailsitter_recovery
 	platforms/nuttx
 
 	# had to add for cmake, not sure why wasn't in original config
@@ -139,7 +146,7 @@ set(config_module_list
 	#examples/math_demo
 	# Tutorial code from
 	# https://px4.io/dev/px4_simple_app
-	#examples/px4_simple_app
+	examples/px4_simple_app
 
 	# Tutorial code from
 	# https://px4.io/dev/daemon
@@ -163,13 +170,11 @@ set(config_extra_builtin_cmds
 	)
 
 set(config_extra_libs
-	${CMAKE_SOURCE_DIR}/src/lib/mathlib/CMSIS/libarm_cortexM4lf_math.a
 	uavcan
 	uavcan_stm32_driver
 	)
 
 set(config_io_extra_libs
-	#${CMAKE_SOURCE_DIR}/src/lib/mathlib/CMSIS/libarm_cortexM3l_math.a
 	)
 
 add_custom_target(sercon)

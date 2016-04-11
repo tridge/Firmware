@@ -39,17 +39,12 @@
  * @author Andreas Antener <andreas@uaventure.com>
  */
 
-#include <px4_config.h>
-
-#include <systemlib/param/param.h>
-
 /**
  * Enable or disable runway takeoff with landing gear
  *
  * 0: disabled, 1: enabled
  *
- * @min 0
- * @max 1
+ * @boolean
  * @group Runway Takeoff
  */
 PARAM_DEFINE_INT32(RWTO_TKOFF, 0);
@@ -59,6 +54,8 @@ PARAM_DEFINE_INT32(RWTO_TKOFF, 0);
  *
  * 0: airframe heading, 1: heading towards takeoff waypoint
  *
+ * @value 0 Airframe
+ * @value 1 Waypoint
  * @min 0
  * @max 1
  * @group Runway Takeoff
