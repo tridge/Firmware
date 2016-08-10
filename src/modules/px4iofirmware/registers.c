@@ -95,6 +95,7 @@ uint16_t		r_page_status[] = {
 	[PX4IO_P_STATUS_VRSSI]			= 0,
 	[PX4IO_P_STATUS_PRSSI]			= 0,
 	[PX4IO_P_STATUS_MIXER]			= 0,
+	[PX4IO_P_STATUS_MIXER_COUNT]		= 0,
 };
 
 /**

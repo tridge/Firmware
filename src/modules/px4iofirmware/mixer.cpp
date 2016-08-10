@@ -507,6 +507,11 @@ mixer_handle_text(const void *buffer, size_t length)
 			}
 
 			mixer_text_length = resid;
+
+			// update count so caller can check right
+			// number of mixers have been loaded on
+			// completion
+			r_page_status[PX4IO_P_STATUS_MIXER_COUNT] = mixer_group.count();
 		}
 
 		break;
