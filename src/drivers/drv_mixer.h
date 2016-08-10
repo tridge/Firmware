@@ -109,6 +109,11 @@ struct mixer_simple_s {
  */
 #define MIXERIOCLOADBUF		_MIXERIOC(5)
 
+/**
+ * return the number of loaded mixers
+ */
+#define MIXERIOCGETCOUNT		_MIXERIOC(6)
+
 /*
  * XXX Thoughts for additional operations:
  *

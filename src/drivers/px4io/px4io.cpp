@@ -2802,6 +2802,11 @@ PX4IO::ioctl(file *filep, int cmd, unsigned long arg)
 			break;
 		}
 
+	case MIXERIOCGETCOUNT: {
+			*(uint32_t *)arg = io_reg_get(PX4IO_PAGE_STATUS, PX4IO_P_STATUS_MIXER_COUNT);
+			break;
+		}
+
 	case RC_INPUT_GET: {
 			uint16_t status;
 			rc_input_values *rc_val = (rc_input_values *)arg;
