@@ -49,6 +49,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -116,35 +117,14 @@ __END_DECLS
 #  error microSD DMA support requires CONFIG_GRAN
 # endif
 
-static GRAN_HANDLE dma_allocator;
-
-/*
- * The DMA heap size constrains the total number of things that can be
- * ready to do DMA at a time.
- *
- * For example, FAT DMA depends on one sector-sized buffer per filesystem plus
- * one sector-sized buffer per file.
- *
- * We use a fundamental alignment / granule size of 64B; this is sufficient
- * to guarantee alignment for the largest STM32 DMA burst (16 beats x 32bits).
- */
-static uint8_t g_dma_heap[8192] __attribute__((aligned(64)));
 static perf_counter_t g_dma_perf;
+static perf_counter_t g_dma_fail_perf;
 
 static void
 dma_alloc_init(void)
 {
-	dma_allocator = gran_initialize(g_dma_heap,
-					sizeof(g_dma_heap),
-					7,  /* 128B granule - must be > alignment (XXX bug?) */
-					6); /* 64B alignment */
-
-	if (dma_allocator == NULL) {
-		message("[boot] DMA allocator setup FAILED");
-
-	} else {
-		g_dma_perf = perf_alloc(PC_COUNT, "DMA allocations");
-	}
+    g_dma_perf = perf_alloc(PC_COUNT, "DMA alloc");
+    g_dma_fail_perf = perf_alloc(PC_COUNT, "DMA alloc fail");
 }
 
 /****************************************************************************
@@ -161,14 +141,20 @@ __EXPORT void fat_dma_free(FAR void *memory, size_t size);
 void *
 fat_dma_alloc(size_t size)
 {
+    // allocate in SRAM, anything above 0x20000000 is not CCM memory, so is DMA capable
+    void *p = malloc_memrange(size, 0x20000000, 0x30000000);
+    if (p) {
 	perf_count(g_dma_perf);
-	return gran_alloc(dma_allocator, size);
+    } else {
+        perf_count(g_dma_fail_perf);
+    }
+    return p;
 }
 
 void
 fat_dma_free(FAR void *memory, size_t size)
 {
-	gran_free(dma_allocator, memory, size);
+    free(memory);
 }
 
 #else
@@ -344,3 +330,4 @@ __EXPORT int nsh_archinitialize(void)
 
 	return OK;
 }
+
