@@ -1708,6 +1708,10 @@ PX4FMU::pwm_ioctl(file *filp, int cmd, unsigned long arg)
 		*(uint32_t *)arg = _pwm_default_rate;
 		break;
 
+	case PWM_SERVO_SET_DEFAULT_UPDATE_RATE:
+		_pwm_default_rate = (uint32_t)arg;
+		break;
+        
 	case PWM_SERVO_SET_UPDATE_RATE:
 		ret = set_pwm_rate(_pwm_alt_rate_channels, _pwm_default_rate, arg);
 		break;
